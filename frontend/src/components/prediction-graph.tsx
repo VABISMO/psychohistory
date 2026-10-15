@@ -306,6 +306,12 @@ export function PredictionGraph({
             <Info label="Duration" value={selected.event.duration || "—"} />
             <Info label="Radiant" value={selected.event.radiant ? "yes" : "no"} />
             <Info label="Stability" value={selected.stability_index.toFixed(3)} />
+            {selected.event.probability_ci && selected.event.probability_ci.length === 2 && (
+              <Info
+                label="90% CI"
+                value={`${(selected.event.probability_ci[0] * 100).toFixed(0)}–${(selected.event.probability_ci[1] * 100).toFixed(0)}%`}
+              />
+            )}
           </dl>
 
           {selected.event.actors && selected.event.actors.length > 0 && (

@@ -34,6 +34,7 @@ export interface PsychEvent {
   date: string;
   duration: string;
   temporal?: TemporalInfo | null;
+  probability_ci?: number[] | null;
   actors?: Actor[];
 }
 

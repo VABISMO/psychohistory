@@ -9,6 +9,7 @@ from psychohistory.services.predictor import (
     _compute_probability,
     _build_tree,
     _apply_coupling,
+    _attach_uncertainty,
     _repair_and_load,
     _brace_extract_objects,
     _group_events,
@@ -124,6 +125,25 @@ def test_apply_coupling_conditions_children():
 
     for r in nodes:
         verify(r, pre[r.id])  # roots have no parent and must stay unchanged
+
+
+def test_attach_uncertainty_interval():
+    ev = Event(name="e", description="d", probability=0.5, magnitude=0.5,
+               trend="stable", year=2027)
+    _attach_uncertainty(ev)
+    assert ev.probability_ci is not None
+    lo, hi = ev.probability_ci
+    assert 0.0 <= lo < 0.5 < hi <= 1.0
+    # idempotent: a second call must not overwrite
+    first = list(ev.probability_ci)
+    _attach_uncertainty(ev)
+    assert ev.probability_ci == first
+
+
+def test_build_tree_events_have_ci_and_temporal():
+    nodes = _build_tree("test", 1)
+    for root in nodes:
+        assert root.event.probability_ci is not None
 
 
 def test_repair_valid_json():
