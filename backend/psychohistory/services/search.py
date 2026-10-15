@@ -1,0 +1,219 @@
+import asyncio
+import re
+import xml.etree.ElementTree as ET
+from typing import List
+from urllib.parse import quote, quote_plus
+
+import httpx
+
+CURATED_SOURCES = [
+    "World Bank - World Development Indicators (Gini, GDP, gobernanza)",
+    "Freedom House - Freedom in the World Report (indices de libertad)",
+    "Pew Research Center - Social Trust & Polarization surveys",
+    "Our World in Data - indicadores sociales y economicos de largo plazo",
+    "Transparency International - Corruption Perceptions Index",
+    "V-Dem Institute - Democracy indices",
+    "arXiv / JSTOR - complejidad, redes y resiliencia social",
+    "Archivos historicos - transiciones de regimen, colapsos, revoluciones",
+]
+
+_HEADERS = {
+    "User-Agent": (
+        "PsychohistoryResearch/1.0 (https://github.com/psychohistory; "
+        "psychohistory@users.noreply.github.com) python-httpx"
+    )
+}
+
+
+async def _google_news(query: str, limit: int = 8) -> List[str]:
+    url = (
+        "https://news.google.com/rss/search?"
+        f"q={quote_plus(query)}&hl=es&gl=ES&ceid=ES:es"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=12.0, headers=_HEADERS) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+        root = ET.fromstring(resp.text)
+        out = []
+        for item in root.findall(".//item")[:limit]:
+            title = (item.findtext("title") or "").strip()
+            pub = (item.findtext("pubDate") or "").strip()
+            source_el = item.find("source")
+            source = (source_el.text if source_el is not None and source_el.text else "").strip()
+            if title:
+                extra = " · ".join(x for x in [source, pub] if x)
+                out.append(f"NOTICIA: {title}" + (f" ({extra})" if extra else ""))
+        return out
+    except Exception as e:
+        print(f"[SEARCH] Google News fallo: {type(e).__name__}")
+        return []
+
+
+async def _wikipedia(query: str, limit: int = 3, lang: str = "es") -> List[str]:
+    base = f"https://{lang}.wikipedia.org"
+    try:
+        async with httpx.AsyncClient(timeout=12.0, headers=_HEADERS) as client:
+            s = await client.get(
+                f"{base}/w/api.php",
+                params={
+                    "action": "query",
+                    "list": "search",
+                    "srsearch": query,
+                    "format": "json",
+                    "srlimit": limit,
+                },
+            )
+            s.raise_for_status()
+            titles = [x["title"] for x in s.json().get("query", {}).get("search", [])]
+
+            out = []
+            for title in titles:
+                summary = await client.get(
+                    f"{base}/api/rest_v1/page/summary/{quote(title, safe='')}"
+                )
+                if summary.status_code == 200:
+                    data = summary.json()
+                    extract = (data.get("extract") or "").strip()
+                    if extract:
+                        out.append(f"WIKIPEDIA ({title}): {extract[:320]}")
+            return out
+    except Exception as e:
+        print(f"[SEARCH] Wikipedia fallo: {type(e).__name__}")
+        return []
+
+
+async def retrieve_context(prompt: str, max_results: int = 10) -> List[str]:
+    """
+    Recupera contexto real de internet: noticias recientes + enciclopedia + fuentes
+    macro curadas. Todo se inyecta al LLM para fundamentar las predicciones.
+    """
+    print(f"[SEARCH] Recuperando contexto para: '{prompt}'")
+
+    news_task = _google_news(prompt)
+    wiki_es_task = _wikipedia(prompt, lang="es")
+    wiki_en_task = _wikipedia(prompt, lang="en")
+    news, wiki_es, wiki_en = await asyncio.gather(news_task, wiki_es_task, wiki_en_task)
+    wiki = wiki_es + wiki_en
+
+    context: List[str] = []
+    context.append(f"ESCENARIO DEL USUARIO: {prompt}")
+    if news:
+        context.append(f"--- NOTICIAS RECIENTES ({len(news)}) ---")
+        context.extend(news)
+    if wiki:
+        context.append("--- CONTEXTO ENCICLOPEDICO ---")
+        context.extend(wiki)
+    if not news and not wiki:
+        context.append("(Sin acceso a busqueda web en vivo; usar conocimiento general)")
+
+    context.append("--- FUENTES DE DATOS DISPONIBLES ---")
+    context.append("; ".join(CURATED_SOURCES))
+
+    print(f"[SEARCH] Contexto: {len(news)} noticias, {len(wiki)} entradas wiki")
+    return context[: max_results + 4]
+
+
+# Generic, domain-agnostic "bound-seeking" terms. They are combined with the
+# USER'S OWN scenario, so nothing is hardcoded per domain or use-case: the
+# queries always adapt to whatever is being predicted.
+_BOUND_TERMS = [
+    "total seats majority limit",
+    "maximum record highest ever",
+    "legal cap constitutional limit",
+    "capacidad total limite legal",
+    "maximo record historico",
+]
+
+
+def _constraint_queries(prompt: str, k: int = 3) -> List[str]:
+    """Derive bound-seeking queries from the user's own scenario."""
+    return [f"{prompt} {term}" for term in _BOUND_TERMS[:k]]
+
+
+def _detemporalize(text: str) -> str:
+    """Strip temporal qualifiers (years, months, ordinal days) from a scenario.
+
+    Generic and domain-agnostic: it lets a future/hypothetical scenario match the
+    institutional Wikipedia article that states the real total or capacity.
+    """
+    text = re.sub(r"\b(?:19|20)\d{2}\b", " ", text)
+    text = re.sub(
+        r"\b(January|February|March|April|May|June|July|August|September|October|November|December)\b",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r"\b\d{1,2}(?:st|nd|rd|th)\b", " ", text, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _has_number(line: str) -> bool:
+    return bool(re.search(r"\d[\d\.,]*", line))
+
+
+_CAPACITY_WORDS = (
+    "seat", "seats", "escaño", "escaños", "majority", "mayoria", "mayoría",
+    "total", "member", "members", "miembros", "capacity", "capacidad",
+    "limit", "límite", "tope", "record", "récord", "maximum", "máximo",
+    "percent", "quota", "cuota", "bench", "esquinas",
+)
+
+
+def _score_fact(fact: str, scenario: str) -> float:
+    """Rank a retrieved line by on-topic overlap + presence of capacity/limit words."""
+    f = fact.lower()
+    words = [w for w in re.findall(r"\w+", scenario.lower()) if len(w) > 3]
+    score = float(sum(1 for w in words if w in f))
+    score += 2.0 * sum(1 for w in _CAPACITY_WORDS if w in f)
+    return score
+
+
+async def retrieve_constraints(prompt: str) -> List[str]:
+    """Fetch real-world maximums / limits / records for whatever the scenario predicts.
+
+    Runs live web queries built from the scenario plus generic bound-seeking
+    terms (Spanish and English Wikipedia + news), then keeps only the retrieved
+    lines that carry a concrete number (totals, seat counts, caps, historical
+    records, percentages). Every numeric bound comes from the web — none is
+    hardcoded.
+    """
+    print(f"[SEARCH] Looking up real maximums/limits for: '{prompt}'")
+
+    tasks = []
+    # Direct lookups of the scenario itself (best chance of hitting the
+    # institutional article that states the total/capacity).
+    tasks.append(_wikipedia(prompt, limit=2, lang="es"))
+    tasks.append(_wikipedia(prompt, limit=2, lang="en"))
+    # De-temporalized lookups: a future scenario matches the standing article
+    # that states the real total/capacity (e.g. the chamber's seat count).
+    bare = _detemporalize(prompt)
+    if bare:
+        tasks.append(_wikipedia(bare, limit=2, lang="es"))
+        tasks.append(_wikipedia(bare, limit=2, lang="en"))
+    # Bound-seeking queries derived from the user's own scenario.
+    for q in _constraint_queries(prompt, k=2):
+        tasks.append(_wikipedia(q, limit=1, lang="es"))
+        tasks.append(_wikipedia(q, limit=1, lang="en"))
+        tasks.append(_google_news(q, limit=3))
+
+    results = await asyncio.gather(*tasks)
+
+    facts: List[str] = []
+    seen = set()
+    for group in results:
+        for line in group:
+            if not line or not _has_number(line):
+                continue
+            key = line[:80].lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            facts.append(line[:300])
+
+    # Prioritize the on-topic institutional fact that states the real total/cap.
+    facts.sort(key=lambda x: _score_fact(x, prompt), reverse=True)
+    facts = [f for f in facts if _score_fact(f, prompt) > 0]
+
+    print(f"[SEARCH] Found {len(facts)} real numeric limit/record facts")
+    return facts[:6]
