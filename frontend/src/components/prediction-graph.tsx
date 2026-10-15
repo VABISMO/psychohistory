@@ -13,9 +13,9 @@ import {
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Sparkles, TrendingUp, TrendingDown, Minus, Activity, X, BookOpen } from "lucide-react";
+import { Sparkles, TrendingUp, TrendingDown, Minus, Activity, X, BookOpen, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { PredictionNode, PsychEvent, TemporalInfo } from "@/lib/api";
+import type { PredictionNode, PsychEvent, TemporalInfo, Actor } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 
 const BRANCH_COLORS: Record<string, string> = {
@@ -308,6 +308,10 @@ export function PredictionGraph({
             <Info label="Stability" value={selected.stability_index.toFixed(3)} />
           </dl>
 
+          {selected.event.actors && selected.event.actors.length > 0 && (
+            <ActorDetails actors={selected.event.actors} />
+          )}
+
           {selected.event.temporal && <TemporalDetails t={selected.event.temporal} />}
         </div>
       )}
@@ -342,6 +346,35 @@ export function PredictionGraph({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ActorDetails({ actors }: { actors: Actor[] }) {
+  return (
+    <div className="mt-3 border-t border-border pt-3">
+      <div className="mb-2 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+        <Users className="size-3" /> Actors
+      </div>
+      <ul className="space-y-1.5">
+        {actors.map((a, i) => (
+          <li key={i} className="rounded-md bg-background/60 px-2 py-1.5 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium text-foreground">{a.name}</span>
+              <span className="font-mono text-[10px] text-muted-foreground">
+                {a.role} · {(a.influence * 100).toFixed(0)}%
+              </span>
+            </div>
+            {(a.age != null || a.tenure_years != null) && (
+              <div className="mt-0.5 text-[10px] text-muted-foreground">
+                {a.age != null && <>age {a.age}</>}
+                {a.age != null && a.tenure_years != null && " · "}
+                {a.tenure_years != null && <>tenure {a.tenure_years}y</>}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

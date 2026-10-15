@@ -7,11 +7,12 @@ import re
 import uuid
 import time
 from typing import List, Optional, Tuple
-from ..models import PredictionResult, PredictionNode, Event, TemporalInfo
+from ..models import PredictionResult, PredictionNode, Event, TemporalInfo, Actor
 from ..config_db import coll
 from .limiter import ollama_bottleneck, with_retries
 from . import temporal as temporal_math
 from . import coupling as coupling_math
+from . import actors as actors_math
 
 OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_MODEL = "llama3"
@@ -26,6 +27,11 @@ PREFERRED_MODELS = ["llama3", "llama3:latest", "llama3.1", "gemma4:latest", "gem
 
 # When enabled, a child's probability is conditioned on its parent's (section C).
 COUPLING_ENABLED = os.getenv("PSYCHO_COUPLING", "1").lower() not in ("0", "false", "no", "off")
+
+# ROADMAP section B: named actors parsed from the model and their leverage used
+# to nudge branch probabilities. Set PSYCHO_ACTORS=0 for the previous behaviour.
+ACTORS_ENABLED = os.getenv("PSYCHO_ACTORS", "1").lower() not in ("0", "false", "no", "off")
+ACTOR_SHIFT_STRENGTH = 0.5
 
 
 def _get_available_models() -> List[str]:
@@ -237,6 +243,37 @@ def _apply_coupling(nodes: List[PredictionNode]) -> None:
         walk(root)
 
 
+def _apply_actor_influence(nodes: List[PredictionNode]) -> None:
+    """Let named actors nudge their event's probability (ROADMAP section B).
+
+    Only events that actually carry named actors are affected, so the math
+    fallback (which has none) is untouched. The strongest actor on the event sets
+    the weight; the optimistic/continuation branches are pushed up and the
+    pessimistic branch down. Disabled with PSYCHO_ACTORS=0.
+    """
+    if not ACTORS_ENABLED or not nodes:
+        return
+
+    def walk(n: PredictionNode) -> None:
+        acts = n.event.actors
+        if acts:
+            weight = max(
+                actors_math.influence_weight(a.influence, a.role) for a in acts
+            )
+            direction = -1.0 if n.branch_type == "min" else 1.0
+            n.stability_index = round(
+                actors_math.shift_probability(
+                    n.stability_index, weight, direction, ACTOR_SHIFT_STRENGTH
+                ),
+                4,
+            )
+        for c in n.children:
+            walk(c)
+
+    for root in nodes:
+        walk(root)
+
+
 def _fallback_summary(prompt: str, roots: List[PredictionNode]) -> str:
     names = [r.event.name for r in roots[:3]]
     joined = "; ".join(names) if names else "no dominant scenario"
@@ -253,6 +290,7 @@ def generate_prediction_fallback(prompt: str, depth: int, context: List[str]) ->
     print("[PREDICT] Generating prediction with local mathematical model")
     graph_nodes = _build_tree(prompt, depth)
     _apply_coupling(graph_nodes)
+    _apply_actor_influence(graph_nodes)
     coherence = _compute_coherence(graph_nodes)
 
     return PredictionResult(
@@ -419,6 +457,42 @@ def _repair_and_load(text: str) -> dict:
     return {"summary": summary, "events": _brace_extract_objects(text)}
 
 
+def _parse_actors(raw: dict) -> List[Actor]:
+    """Parse a list of named actors from raw LLM JSON (ROADMAP section B)."""
+    if not ACTORS_ENABLED:
+        return []
+    items = raw.get("actors") or raw.get("actores") or []
+    if isinstance(items, dict):
+        items = [items]
+    out: List[Actor] = []
+    if not isinstance(items, list):
+        return out
+    for it in items:
+        if isinstance(it, str):
+            it = {"name": it}
+        if not isinstance(it, dict):
+            continue
+        name = it.get("name") or it.get("nombre")
+        if not name:
+            continue
+        age = it.get("age") or it.get("edad")
+        tenure = it.get("tenure_years") or it.get("tenure") or it.get("anios")
+        stress = it.get("stress") or it.get("presion")
+        try:
+            actor = Actor(
+                name=str(name)[:120],
+                role=str(it.get("role") or it.get("rol") or "other")[:40],
+                influence=_normalize_scale(it.get("influence") or it.get("influencia"), 0.5),
+                age=int(age) if age not in (None, "") else None,
+                tenure_years=float(tenure) if tenure not in (None, "") else None,
+                stress=_normalize_scale(stress, 0.0),
+            )
+        except (TypeError, ValueError):
+            continue
+        out.append(actor)
+    return out[:6]
+
+
 def _build_event_from_raw(raw: dict, prompt: str, index: int, depth: int) -> Event:
     name = (
         raw.get("name")
@@ -445,6 +519,7 @@ def _build_event_from_raw(raw: dict, prompt: str, index: int, depth: int) -> Eve
         year=year,
         date=str(date)[:40],
         duration=str(duration)[:40],
+        actors=_parse_actors(raw),
     )
 
 
@@ -504,6 +579,11 @@ async def _llm_flat_tree(
 
     n1 = 3 ** 1
     n2 = 3 ** 2
+    actors_field = (
+        ', "actors": [{"name": "...", "role": "leader", "influence": 0.7, '
+        '"age": 62, "tenure_years": 4}]'
+        if ACTORS_ENABLED else ""
+    )
     schema_hint = (
         '{\n'
         '  "summary": "one paragraph (3-5 sentences) with the most plausible global '
@@ -511,9 +591,16 @@ async def _llm_flat_tree(
         '  "events": [\n'
         '    {"level": 1, "name": "...", "description": "...", "magnitude": 0.0, '
         '"trend": "rising", "radiant": true, "year": 2029, "date": "Nov 2029", '
-        '"duration": "6 months"}\n'
+        '"duration": "6 months"' + actors_field + '}\n'
         '  ]\n'
         '}'
+    )
+
+    actors_rule = (
+        "- For each event include 1-3 REAL named \"actors\" that drive it, each "
+        "with a role (leader|party|general|central_banker|ceo|union|institution) "
+        "and an influence 0.0-1.0. Use real people's approximate age and tenure.\n"
+        if ACTORS_ENABLED else ""
     )
 
     system_prompt = (
@@ -535,6 +622,7 @@ async def _llm_flat_tree(
         "- Write everything in ENGLISH.\n"
         "- Name REAL, verifiable actors: political parties, leaders, governments, "
         "countries, institutions, companies, unions — adapted to the scenario.\n"
+        + actors_rule +
         "- Each description must say what concretely happens: who wins, who loses, "
         "what decision is taken, and the consequence. NO generic filler.\n"
         "- \"date\": approximate month/year it occurs (e.g. \"Nov 2029\").\n"
@@ -688,6 +776,7 @@ async def generate_prediction_ollama(
         flat, summary = await _llm_flat_tree(prompt, depth, context, model, constraints)
         graph_nodes = _assemble_tree(flat, depth, prompt)
         _apply_coupling(graph_nodes)
+        _apply_actor_influence(graph_nodes)
 
         if not summary:
             summary = _fallback_summary(prompt, graph_nodes)

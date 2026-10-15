@@ -68,16 +68,16 @@ with *increasing* baseline hazard (a renewal / wearing‑out process).
 
 ### B. Actors & "heroes" (individual-level modelling) — **P0**
 
-- [ ] Model **key actors** (leaders, parties, generals, central bankers, CEOs) as first-class
-      entities with attributes: power, tenure, popularity, ideology, constraints.
-- [ ] **Leader-departure hazard** (death/exit/resignation as a function of age, tenure,
-      stress) — the "hero transition" event.
-- [ ] **Great-man influence weight**: scale an actor's leverage to shift branch probabilities
+- [x] Model **key actors** (leaders, parties, generals, central bankers, CEOs) as first-class
+      entities with attributes: power, tenure, popularity, ideology, constraints. *(`Actor` model + parsing)*
+- [x] **Leader-departure hazard** (death/exit/resignation as a function of age, tenure,
+      stress) — the "hero transition" event. *(Gompertz-Makeham + political risk)*
+- [x] **Great-man influence weight**: scale an actor's leverage to shift branch probabilities
       (a single decision can move `b_same`, `b_max`, `b_min`).
-- [ ] Actor → action → consequence graph, so predictions can say *"X does Y"*.
-- [ ] Coalition / **game-theoretic** layer (who can form a majority, who blocks whom).
-- [ ] Succession modelling (heir presence/absence, purge cycles) — e.g. deferred-succession
-      regimes.
+- [ ] Actor → action → consequence graph, so predictions can say *"X does Y"*. *(actors attached per event, not yet a graph)*
+- [x] Coalition / **game-theoretic** layer (who can form a majority, who blocks whom). *(winning coalitions + Banzhaf index)*
+- [x] Succession modelling (heir presence/absence, purge cycles) — e.g. deferred-succession
+      regimes. *(`succession_viability`)*
 - [ ] Optional **agent-based simulation** to explore emergent outcomes.
 
 ### C. Event coupling & cascades — **P0**

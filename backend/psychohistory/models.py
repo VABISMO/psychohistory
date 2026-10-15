@@ -24,6 +24,16 @@ class TemporalInfo(BaseModel):
     risk_score: Optional[float] = Field(default=None, description="P(occurs) * severity * magnitude")
 
 
+class Actor(BaseModel):
+    """A first-class actor — leader, party, general, banker, CEO (ROADMAP section B)."""
+    name: str = Field(description="Real named actor")
+    role: str = Field(default="other", description="leader | party | general | central_banker | ceo | ...")
+    influence: float = Field(default=0.5, ge=0.0, le=1.0, description="Leverage 0-1")
+    age: Optional[int] = Field(default=None, description="Age in years, if a person")
+    tenure_years: Optional[float] = Field(default=None, description="Years in current role")
+    stress: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Political stress 0-1")
+
+
 class Event(BaseModel):
     name: str = Field(description="Short concrete event headline")
     description: str = Field(description="Concrete description naming real actors and outcome")
@@ -35,6 +45,7 @@ class Event(BaseModel):
     date: str = Field(default="", description="Approximate date it occurs, e.g. 'Nov 2029'")
     duration: str = Field(default="", description="How long it lasts, e.g. '6 months'")
     temporal: Optional[TemporalInfo] = Field(default=None, description="Temporal / rare-event statistics")
+    actors: List[Actor] = Field(default_factory=list, description="Named actors driving this event")
 
 
 class PredictionBranch(BaseModel):
