@@ -131,7 +131,7 @@ with *increasing* baseline hazard (a renewal / wearing‑out process).
 
 ### H. Engineering & quality — **P1**
 
-- [ ] **CI** (GitHub Actions): run backend pytest + frontend tsc/lint/build on every push.
+- [x] **CI** (GitHub Actions): run backend stdlib tests + frontend tsc/lint/build on every push. *(`.github/workflows/ci.yml`, `backend/requirements.txt`)*
 - [ ] Frontend + integration + end‑to‑end tests (currently only backend math is tested).
 - [ ] Pre-commit hooks (ruff/black, eslint/prettier).
 - [ ] Structured logging + observability; request tracing.
