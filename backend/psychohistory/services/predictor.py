@@ -11,6 +11,7 @@ from ..models import PredictionResult, PredictionNode, Event, TemporalInfo
 from ..config_db import coll
 from .limiter import ollama_bottleneck, with_retries
 from . import temporal as temporal_math
+from . import coupling as coupling_math
 
 OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_MODEL = "llama3"
@@ -22,6 +23,9 @@ EPOCH_YEAR = 2026
 
 
 PREFERRED_MODELS = ["llama3", "llama3:latest", "llama3.1", "gemma4:latest", "gemma4"]
+
+# When enabled, a child's probability is conditioned on its parent's (section C).
+COUPLING_ENABLED = os.getenv("PSYCHO_COUPLING", "1").lower() not in ("0", "false", "no", "off")
 
 
 def _get_available_models() -> List[str]:
@@ -210,6 +214,29 @@ def _compute_coherence(nodes: List[PredictionNode]) -> float:
     return round(sum(all_stab) / len(all_stab), 4)
 
 
+def _apply_coupling(nodes: List[PredictionNode]) -> None:
+    """Condition each node's probability on its parent's (ROADMAP section C).
+
+    Walks the tree parents-first so a child sees its parent's already-adjusted
+    value. Disabled with PSYCHO_COUPLING=0, which restores the independent model.
+    """
+    if not COUPLING_ENABLED or not nodes:
+        return
+
+    def walk(parent: PredictionNode) -> None:
+        for child in parent.children:
+            child.stability_index = round(
+                coupling_math.adjust_for_parent(
+                    child.stability_index, parent.stability_index, child.branch_type
+                ),
+                4,
+            )
+            walk(child)
+
+    for root in nodes:
+        walk(root)
+
+
 def _fallback_summary(prompt: str, roots: List[PredictionNode]) -> str:
     names = [r.event.name for r in roots[:3]]
     joined = "; ".join(names) if names else "no dominant scenario"
@@ -225,6 +252,7 @@ def generate_prediction_fallback(prompt: str, depth: int, context: List[str]) ->
     """Generate a prediction locally with the mathematical model (no Ollama)."""
     print("[PREDICT] Generating prediction with local mathematical model")
     graph_nodes = _build_tree(prompt, depth)
+    _apply_coupling(graph_nodes)
     coherence = _compute_coherence(graph_nodes)
 
     return PredictionResult(
@@ -659,6 +687,7 @@ async def generate_prediction_ollama(
 
         flat, summary = await _llm_flat_tree(prompt, depth, context, model, constraints)
         graph_nodes = _assemble_tree(flat, depth, prompt)
+        _apply_coupling(graph_nodes)
 
         if not summary:
             summary = _fallback_summary(prompt, graph_nodes)

@@ -82,11 +82,11 @@ with *increasing* baseline hazard (a renewal / wearing‑out process).
 
 ### C. Event coupling & cascades — **P0**
 
-- [ ] Replace independent branching with **conditioned** probabilities: `P(child | parent)`.
-- [ ] Event dependency graph (causes, enables, prevents, correlates).
-- [ ] **Contagion models** (SIR-like / network diffusion) for protests, violence, adoption.
+- [x] Replace independent branching with **conditioned** probabilities: `P(child | parent)`.
+- [x] Event dependency graph (causes, enables, prevents, correlates). *(coupling coefficients + noisy-OR/AND)*
+- [x] **Contagion models** (SIR-like / network diffusion) for protests, violence, adoption.
 - [ ] Feedback loops (economic ↔ political ↔ social) with resource constraints.
-- [ ] Conservation/constraint checks across the whole tree (e.g. vote/seat totals, budgets).
+- [ ] Conservation/constraint checks across the whole tree (e.g. vote/seat totals, budgets). *(helpers in `coupling.py`, not yet enforced tree-wide)*
 
 ### D. Probabilistic rigour & calibration — **P1**
 
