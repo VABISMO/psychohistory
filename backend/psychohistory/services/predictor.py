@@ -14,6 +14,7 @@ from . import temporal as temporal_math
 from . import coupling as coupling_math
 from . import actors as actors_math
 from . import uncertainty as uncertainty_math
+from . import schema as schema_math
 
 OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_MODEL = "llama3"
@@ -37,6 +38,10 @@ ACTOR_SHIFT_STRENGTH = 0.5
 # ROADMAP section D: a Beta credible interval around each event's probability.
 UNCERTAINTY_ENABLED = os.getenv("PSYCHO_UNCERTAINTY", "1").lower() not in ("0", "false", "no", "off")
 UNCERTAINTY_STRENGTH = 6.0
+
+# ROADMAP section F: constrain decoding with a JSON schema (Ollama structured
+# outputs). PSYCHO_SCHEMA=0 falls back to the plain "json" format.
+SCHEMA_ENABLED = os.getenv("PSYCHO_SCHEMA", "1").lower() not in ("0", "false", "no", "off")
 
 
 def _get_available_models() -> List[str]:
@@ -688,6 +693,16 @@ async def _llm_flat_tree(
     total_nodes = sum(3 ** l for l in range(1, semantic_depth + 1))
     num_predict = min(1500, max(900, total_nodes * 110))
 
+    # ROADMAP section F: constrain the decoder with a JSON schema so output is
+    # valid by construction; the salvage parser stays as a fallback.
+    output_format: object = "json"
+    if SCHEMA_ENABLED:
+        try:
+            output_format = schema_math.build_tree_schema(semantic_depth, include_actors=ACTORS_ENABLED)
+        except Exception as e:
+            print(f"[PREDICT] schema build failed, using plain json ({type(e).__name__}: {e})")
+            output_format = "json"
+
     async def _call_ollama() -> dict:
         async with httpx.AsyncClient(timeout=600.0) as client:
             resp = await client.post(
@@ -696,7 +711,7 @@ async def _llm_flat_tree(
                     "model": model,
                     "prompt": user_msg,
                     "system": system_prompt,
-                    "format": "json",
+                    "format": output_format,
                     "stream": False,
                     "keep_alive": "10m",
                     "options": {
@@ -720,6 +735,11 @@ async def _llm_flat_tree(
                 f"[PREDICT] Ollama retry {n}/2 ({type(e).__name__})"
             ),
         )
+
+    if SCHEMA_ENABLED:
+        problems = schema_math.validate_flat_tree(parsed, semantic_depth)
+        if problems:
+            print(f"[PREDICT] schema warnings ({len(problems)}): {problems[:3]}")
 
     grouped = _group_events(parsed.get("events", []), semantic_depth)
     flat: dict = {}

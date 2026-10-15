@@ -96,14 +96,20 @@ async def retrieve_context(prompt: str, max_results: int = 10) -> List[str]:
     news, wiki_es, wiki_en = await asyncio.gather(news_task, wiki_es_task, wiki_en_task)
     wiki = wiki_es + wiki_en
 
+    # Rerank + dedup before injecting, and chunk any oversized line.
+    news = dedup_and_rerank(news, prompt, limit=8)
+    wiki = dedup_and_rerank(wiki, prompt, limit=6)
+
     context: List[str] = []
     context.append(f"USER SCENARIO: {prompt}")
     if news:
         context.append(f"--- RECENT NEWS ({len(news)}) ---")
-        context.extend(news)
+        for line in news:
+            context.extend(chunk_text(line))
     if wiki:
         context.append("--- ENCYCLOPEDIC CONTEXT ---")
-        context.extend(wiki)
+        for line in wiki:
+            context.extend(chunk_text(line))
     if not news and not wiki:
         context.append("(No live web access; use general knowledge)")
 
@@ -167,6 +173,81 @@ def _score_fact(fact: str, scenario: str) -> float:
     score = float(sum(1 for w in words if w in f))
     score += 2.0 * sum(1 for w in _CAPACITY_WORDS if w in f)
     return score
+
+
+# ---------------------------------------------------------------------------
+# Retrieval hygiene (ROADMAP section F): dedup, rerank and chunk evidence.
+# ---------------------------------------------------------------------------
+
+_STOPWORDS = {
+    "the", "and", "for", "with", "that", "this", "from", "will", "are", "was",
+    "what", "when", "who", "has", "have", "into", "about", "over", "than",
+    "then", "they", "their", "there", "these", "those", "would", "could",
+    "should", "there", "which", "while", "your", "para", "como", "sobre",
+    "entre", "donde", "cuando", "porque", "este", "esta", "esos", "esas",
+}
+
+
+def _keywords(text: str) -> List[str]:
+    return [
+        w for w in re.findall(r"\w+", text.lower())
+        if len(w) > 3 and w not in _STOPWORDS
+    ]
+
+
+def _normalize_key(text: str) -> str:
+    """A coarse key for near-duplicate detection (prefix + first words)."""
+    words = re.findall(r"\w+", text.lower().replace("'", "").replace("’", ""))
+    return " ".join(words[:12])
+
+
+def chunk_text(text: str, max_len: int = 320) -> List[str]:
+    """Split a long source line into sentence-aware chunks of ~max_len chars."""
+    text = text.strip()
+    if len(text) <= max_len:
+        return [text] if text else []
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    chunks: List[str] = []
+    buf = ""
+    for s in sentences:
+        if buf and len(buf) + 1 + len(s) > max_len:
+            chunks.append(buf)
+            buf = s
+        else:
+            buf = f"{buf} {s}".strip()
+    if buf:
+        chunks.append(buf)
+    return chunks
+
+
+def dedup_and_rerank(items: List[str], query: str, limit: int | None = None) -> List[str]:
+    """Drop near-duplicates and order remaining lines by keyword overlap & length.
+
+    Rank = on-topic keyword overlap with the query, small bonus for carrying a
+    number, minus a small penalty for overly long lines. Stable and dependency-free.
+    """
+    if not items:
+        return []
+    qwords = set(_keywords(query))
+    seen = set()
+    scored = []
+    for idx, raw in enumerate(items):
+        line = raw.strip()
+        if not line:
+            continue
+        key = _normalize_key(line)
+        if key in seen:
+            continue
+        seen.add(key)
+        words = set(_keywords(line))
+        overlap = len(qwords & words)
+        has_num = 1.0 if _has_number(line) else 0.0
+        length_penalty = 0.001 * max(0, len(line) - 300)
+        score = overlap + 0.5 * has_num - length_penalty
+        scored.append((score, -idx, line))
+    scored.sort(reverse=True)
+    ranked = [line for _, _, line in scored]
+    return ranked[:limit] if limit is not None else ranked
 
 
 async def retrieve_constraints(prompt: str) -> List[str]:

@@ -110,11 +110,11 @@ with *increasing* baseline hazard (a renewal / wearing‑out process).
 
 ### F. LLM & inference — **P1**
 
-- [ ] **Grammar-constrained / JSON-schema decoding** (GBNF / structured outputs) so output
-      is valid by construction; keep the salvage parser only as a fallback.
+- [x] **Grammar-constrained / JSON-schema decoding** (GBNF / structured outputs) so output
+      is valid by construction; keep the salvage parser only as a fallback. *(`schema.py` + Ollama `format`)*
 - [ ] **Self-consistency** (sample k, vote) and **multi-step / chain-of-thought** planning.
 - [ ] Multi-model **ensemble** and **critique/debate** between models.
-- [ ] Better **RAG**: reranking, dedup, chunked evidence with attribution.
+- [x] Better **RAG**: reranking, dedup, chunked evidence. *(attribution/citations pending — see section E)*
 - [ ] Streaming progress to the UI (token/step level).
 - [ ] Optional fine-tuning or distilling a small domain model; quantised CPU inference.
 
