@@ -14,6 +14,15 @@ export interface TemporalInfo {
   risk_score: number | null;
 }
 
+export interface Actor {
+  name: string;
+  role: string;
+  influence: number;
+  age?: number | null;
+  tenure_years?: number | null;
+  stress?: number | null;
+}
+
 export interface PsychEvent {
   name: string;
   description: string;
@@ -25,6 +34,7 @@ export interface PsychEvent {
   date: string;
   duration: string;
   temporal?: TemporalInfo | null;
+  actors?: Actor[];
 }
 
 export interface PredictionNode {
