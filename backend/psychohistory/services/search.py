@@ -25,7 +25,7 @@ _HEADERS = {
 }
 
 
-async def _google_news(query: str, limit: int = 8) -> List[str]:
+async def _google_news_items(query: str, limit: int = 8) -> List[dict]:
     url = (
         "https://news.google.com/rss/search?"
         f"q={quote_plus(query)}&hl=es&gl=ES&ceid=ES:es"
@@ -38,19 +38,33 @@ async def _google_news(query: str, limit: int = 8) -> List[str]:
         out = []
         for item in root.findall(".//item")[:limit]:
             title = (item.findtext("title") or "").strip()
+            link = (item.findtext("link") or "").strip()
             pub = (item.findtext("pubDate") or "").strip()
             source_el = item.find("source")
             source = (source_el.text if source_el is not None and source_el.text else "").strip()
-            if title:
-                extra = " · ".join(x for x in [source, pub] if x)
-                out.append(f"NEWS: {title}" + (f" ({extra})" if extra else ""))
+            if not title:
+                continue
+            out.append({
+                "title": title,
+                "url": link,
+                "snippet": " · ".join(x for x in [source, pub] if x),
+                "source": "NEWS" + (f" · {source}" if source else ""),
+            })
         return out
     except Exception as e:
         print(f"[SEARCH] Google News failed: {type(e).__name__}")
         return []
 
 
-async def _wikipedia(query: str, limit: int = 3, lang: str = "es") -> List[str]:
+async def _google_news(query: str, limit: int = 8) -> List[str]:
+    out = []
+    for it in await _google_news_items(query, limit):
+        extra = it["snippet"]
+        out.append(f"NEWS: {it['title']}" + (f" ({extra})" if extra else ""))
+    return out
+
+
+async def _wikipedia_items(query: str, limit: int = 3, lang: str = "es") -> List[dict]:
     base = f"https://{lang}.wikipedia.org"
     try:
         async with httpx.AsyncClient(timeout=12.0, headers=_HEADERS) as client:
@@ -76,11 +90,28 @@ async def _wikipedia(query: str, limit: int = 3, lang: str = "es") -> List[str]:
                     data = summary.json()
                     extract = (data.get("extract") or "").strip()
                     if extract:
-                        out.append(f"WIKIPEDIA ({title}): {extract[:320]}")
+                        page_url = (
+                            data.get("content_urls", {}).get("desktop", {}).get("page")
+                            or f"{base}/wiki/{quote(title, safe='')}"
+                        )
+                        out.append({
+                            "title": f"{title} ({lang.upper()})",
+                            "url": page_url,
+                            "snippet": extract[:320],
+                            "source": f"WIKIPEDIA · {lang.upper()}",
+                        })
             return out
     except Exception as e:
         print(f"[SEARCH] Wikipedia failed: {type(e).__name__}")
         return []
+
+
+async def _wikipedia(query: str, limit: int = 3, lang: str = "es") -> List[str]:
+    out = []
+    for it in await _wikipedia_items(query, limit, lang):
+        title = it["title"].split(" (")[0]
+        out.append(f"WIKIPEDIA ({title}): {it['snippet']}")
+    return out
 
 
 async def retrieve_context(prompt: str, max_results: int = 10) -> List[str]:
@@ -118,6 +149,41 @@ async def retrieve_context(prompt: str, max_results: int = 10) -> List[str]:
 
     print(f"[SEARCH] Context: {len(news)} news, {len(wiki)} wiki entries")
     return context[: max_results + 4]
+
+
+def _dedupe_sources(items: List[dict]) -> List[dict]:
+    """Deduplicate structured sources by URL, then by normalized title."""
+    seen = set()
+    out = []
+    for it in items:
+        url = (it.get("url") or "").rstrip("/").lower()
+        key = url or re.sub(r"\W+", " ", (it.get("title") or "").lower()).strip()
+        if key and key not in seen:
+            seen.add(key)
+            out.append(it)
+    return out
+
+
+async def retrieve_sources(prompt: str, max_results: int = 12) -> List[dict]:
+    """Retrieve structured evidence sources (title, url, snippet, source).
+
+    Same live sources as :func:`retrieve_context` but returned as records so the
+    API can surface per-event citations (ROADMAP section E). Deduped by URL.
+    """
+    news_items, wiki_es_items, wiki_en_items = await asyncio.gather(
+        _google_news_items(prompt),
+        _wikipedia_items(prompt, limit=3, lang="es"),
+        _wikipedia_items(prompt, limit=3, lang="en"),
+    )
+    items = _dedupe_sources(news_items + wiki_es_items + wiki_en_items)
+    # Rank by keyword overlap with the scenario and keep the top results.
+    qwords = set(_keywords(prompt))
+    items.sort(
+        key=lambda it: len(qwords & set(_keywords(it.get("title", "") + " " + it.get("snippet", "")))),
+        reverse=True,
+    )
+    print(f"[SEARCH] Retrieved {len(items)} structured sources")
+    return items[:max_results]
 
 
 # Generic, domain-agnostic "bound-seeking" terms. They are combined with the

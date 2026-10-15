@@ -13,9 +13,9 @@ import {
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Sparkles, TrendingUp, TrendingDown, Minus, Activity, X, BookOpen, Users } from "lucide-react";
+import { Sparkles, TrendingUp, TrendingDown, Minus, Activity, X, BookOpen, Users, Link2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { PredictionNode, PsychEvent, TemporalInfo, Actor } from "@/lib/api";
+import type { PredictionNode, PsychEvent, TemporalInfo, Actor, Citation } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 
 const BRANCH_COLORS: Record<string, string> = {
@@ -319,6 +319,10 @@ export function PredictionGraph({
           )}
 
           {selected.event.temporal && <TemporalDetails t={selected.event.temporal} />}
+
+          {selected.event.citations && selected.event.citations.length > 0 && (
+            <CitationDetails citations={selected.event.citations} />
+          )}
         </div>
       )}
 
@@ -377,6 +381,44 @@ function ActorDetails({ actors }: { actors: Actor[] }) {
                 {a.age != null && a.tenure_years != null && " · "}
                 {a.tenure_years != null && <>tenure {a.tenure_years}y</>}
               </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function CitationDetails({ citations }: { citations: Citation[] }) {
+  return (
+    <div className="mt-3 border-t border-border pt-3">
+      <div className="mb-2 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+        <Link2 className="size-3" /> Sources
+      </div>
+      <ul className="space-y-1.5">
+        {citations.map((c, i) => (
+          <li key={i} className="rounded-md bg-background/60 px-2 py-1.5 text-xs">
+            <div className="flex items-start justify-between gap-2">
+              {c.url ? (
+                <a
+                  href={c.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-primary underline-offset-2 hover:underline"
+                >
+                  {c.title}
+                </a>
+              ) : (
+                <span className="font-medium text-foreground">{c.title}</span>
+              )}
+              {c.source && (
+                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                  {c.source}
+                </span>
+              )}
+            </div>
+            {c.snippet && (
+              <p className="mt-0.5 line-clamp-2 text-[10px] text-muted-foreground">{c.snippet}</p>
             )}
           </li>
         ))}

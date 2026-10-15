@@ -7,7 +7,7 @@ import re
 import uuid
 import time
 from typing import List, Optional, Tuple
-from ..models import PredictionResult, PredictionNode, Event, TemporalInfo, Actor
+from ..models import PredictionResult, PredictionNode, Event, TemporalInfo, Actor, Citation
 from ..config_db import coll
 from .limiter import ollama_bottleneck, with_retries
 from . import temporal as temporal_math
@@ -15,6 +15,8 @@ from . import coupling as coupling_math
 from . import actors as actors_math
 from . import uncertainty as uncertainty_math
 from . import schema as schema_math
+from . import constraints as constraints_math
+from . import grounding as grounding_math
 
 OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_MODEL = "llama3"
@@ -42,6 +44,12 @@ UNCERTAINTY_STRENGTH = 6.0
 # ROADMAP section F: constrain decoding with a JSON schema (Ollama structured
 # outputs). PSYCHO_SCHEMA=0 falls back to the plain "json" format.
 SCHEMA_ENABLED = os.getenv("PSYCHO_SCHEMA", "1").lower() not in ("0", "false", "no", "off")
+
+# ROADMAP section E: enforce real numeric caps on emitted numbers and anchor
+# events to concrete dates; attach retrieved evidence as citations.
+CONSTRAINTS_ENABLED = os.getenv("PSYCHO_CONSTRAINTS", "1").lower() not in ("0", "false", "no", "off")
+GROUNDING_ENABLED = os.getenv("PSYCHO_GROUNDING", "1").lower() not in ("0", "false", "no", "off")
+CITATIONS_ENABLED = os.getenv("PSYCHO_CITATIONS", "1").lower() not in ("0", "false", "no", "off")
 
 
 def _get_available_models() -> List[str]:
@@ -162,6 +170,51 @@ def _attach_uncertainty(event: Event) -> Event:
     return event
 
 
+def _enforce_constraints(event: Event) -> Event:
+    """Clamp impossible numbers in the event text (ROADMAP section E).
+
+    Uses the offline constraint store to cap seat/member counts and >100%
+    shares. Purely additive; disabled with PSYCHO_CONSTRAINTS=0.
+    """
+    if not CONSTRAINTS_ENABLED:
+        return event
+    try:
+        fixed, violations = constraints_math.enforce_text(event.description)
+        if violations:
+            print(f"[PREDICT] constraint violations corrected: {violations[:3]}")
+            event.description = fixed
+    except Exception as e:
+        print(f"[PREDICT] constraint check skipped ({type(e).__name__}: {e})")
+    return event
+
+
+def _attach_grounding(event: Event) -> Event:
+    """Anchor an event to a concrete date when it only has a vague reference.
+
+    Resolves relative time expressions ("in 3 years", "next year") found in the
+    event text into an ISO date/year (ROADMAP section E). Disabled with
+    PSYCHO_GROUNDING=0. Failures are swallowed.
+    """
+    if not GROUNDING_ENABLED:
+        return event
+    date = (event.date or "").strip()
+    if date and not date.isdigit():
+        return event  # already a concrete label like "Nov 2029"
+    try:
+        ref = grounding_math.resolve_date(f"{event.name} {event.description}")
+        if ref:
+            event.date = ref["iso"]
+            if ref["kind"] == "year":
+                try:
+                    event.year = int(ref["year"])
+                except (TypeError, ValueError):
+                    pass
+            print(f"[PREDICT] grounded '{ref['label']}' -> {ref['iso']}")
+    except Exception as e:
+        print(f"[PREDICT] grounding skipped ({type(e).__name__}: {e})")
+    return event
+
+
 BRANCH_EN = {
     "same": "continuation of the current trend",
     "max": "high-probability (optimistic) scenario",
@@ -253,6 +306,35 @@ def _compute_coherence(nodes: List[PredictionNode]) -> float:
     return round(sum(all_stab) / len(all_stab), 4)
 
 
+def _flatten_nodes(nodes: List[PredictionNode]) -> List[PredictionNode]:
+    """Depth-first list of every node in the forest."""
+    out: List[PredictionNode] = []
+
+    def walk(n: PredictionNode):
+        out.append(n)
+        for c in n.children:
+            walk(c)
+
+    for n in nodes:
+        walk(n)
+    return out
+
+
+def _attach_citations(nodes: List[PredictionNode], sources: Optional[List[dict]]) -> None:
+    """Attach the best-matching retrieved sources to each event (section E)."""
+    if not CITATIONS_ENABLED or not sources or not nodes:
+        return
+    try:
+        citations = [
+            c for c in (grounding_math.normalize_citation(**s) for s in sources) if c
+        ]
+        citations = grounding_math.dedupe_citations(citations)
+        events = [n.event for n in _flatten_nodes(nodes)]
+        grounding_math.attribute_citations(events, citations, top_k=2)
+    except Exception as e:
+        print(f"[PREDICT] citation attribution skipped ({type(e).__name__}: {e})")
+
+
 def _apply_coupling(nodes: List[PredictionNode]) -> None:
     """Condition each node's probability on its parent's (ROADMAP section C).
 
@@ -318,12 +400,24 @@ def _fallback_summary(prompt: str, roots: List[PredictionNode]) -> str:
     )
 
 
-def generate_prediction_fallback(prompt: str, depth: int, context: List[str]) -> PredictionResult:
+def _citations_from(sources: Optional[List[dict]]) -> List[Citation]:
+    """Build a de-duplicated Citation list from raw source records."""
+    if not sources:
+        return []
+    try:
+        items = [c for c in (grounding_math.normalize_citation(**s) for s in sources) if c]
+        return grounding_math.dedupe_citations(items)
+    except Exception:
+        return []
+
+
+def generate_prediction_fallback(prompt: str, depth: int, context: List[str], sources: Optional[List[dict]] = None) -> PredictionResult:
     """Generate a prediction locally with the mathematical model (no Ollama)."""
     print("[PREDICT] Generating prediction with local mathematical model")
     graph_nodes = _build_tree(prompt, depth)
     _apply_coupling(graph_nodes)
     _apply_actor_influence(graph_nodes)
+    _attach_citations(graph_nodes, sources)
     coherence = _compute_coherence(graph_nodes)
 
     return PredictionResult(
@@ -334,6 +428,7 @@ def generate_prediction_fallback(prompt: str, depth: int, context: List[str]) ->
         summary=_fallback_summary(prompt, graph_nodes),
         graph_nodes=graph_nodes,
         context_used=context,
+        sources=_citations_from(sources),
         model_used="mathematical-fallback",
         timestamp=time.time(),
     )
@@ -761,6 +856,8 @@ async def _llm_flat_tree(
 
 
 def _event_to_node(event: Event, level: int, parent_id: Optional[str], branch_type: str) -> PredictionNode:
+    _attach_grounding(event)
+    _enforce_constraints(event)
     _attach_temporal(event)
     _attach_uncertainty(event)
     s_p, _, _ = _compute_probability(event.magnitude, event.trend, event.radiant, level - 1)
@@ -811,13 +908,14 @@ async def generate_prediction_ollama(
     context: List[str],
     model: str = DEFAULT_MODEL,
     constraints: Optional[List[str]] = None,
+    sources: Optional[List[dict]] = None,
 ) -> PredictionResult:
     """Try to generate a prediction via Ollama. Fall back to the math model on failure."""
     try:
         models = _get_available_models()
         if not models:
             print("[PREDICT] Ollama not responding, using local mathematical model")
-            return generate_prediction_fallback(prompt, depth, context)
+            return generate_prediction_fallback(prompt, depth, context, sources)
 
         model = model if model in models else _pick_model(models)
         print(f"[PREDICT] Using Ollama model: {model} (available: {models})")
@@ -826,6 +924,7 @@ async def generate_prediction_ollama(
         graph_nodes = _assemble_tree(flat, depth, prompt)
         _apply_coupling(graph_nodes)
         _apply_actor_influence(graph_nodes)
+        _attach_citations(graph_nodes, sources)
 
         if not summary:
             summary = _fallback_summary(prompt, graph_nodes)
@@ -840,13 +939,14 @@ async def generate_prediction_ollama(
             summary=summary,
             graph_nodes=graph_nodes,
             context_used=context,
+            sources=_citations_from(sources),
             model_used=model,
             timestamp=time.time(),
         )
 
     except Exception as e:
         print(f"[PREDICT] Ollama error ({type(e).__name__}: {e}), using mathematical fallback")
-        return generate_prediction_fallback(prompt, depth, context)
+        return generate_prediction_fallback(prompt, depth, context, sources)
 
 
 async def save_prediction(result: PredictionResult):

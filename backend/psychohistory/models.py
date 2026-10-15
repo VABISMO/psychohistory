@@ -34,6 +34,16 @@ class Actor(BaseModel):
     stress: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Political stress 0-1")
 
 
+class Citation(BaseModel):
+    """A retrieved evidence source (ROADMAP section E)."""
+    title: str = Field(description="Source title")
+    url: str = Field(default="", description="Source URL, if available")
+    snippet: str = Field(default="", description="Short quoted evidence")
+    source: str = Field(default="", description="Publisher / origin (e.g. NEWSDATA, WIKIPEDIA)")
+    retrieved_at: str = Field(default="", description="ISO date the source was retrieved")
+
+
+
 class Event(BaseModel):
     name: str = Field(description="Short concrete event headline")
     description: str = Field(description="Concrete description naming real actors and outcome")
@@ -47,6 +57,7 @@ class Event(BaseModel):
     temporal: Optional[TemporalInfo] = Field(default=None, description="Temporal / rare-event statistics")
     probability_ci: Optional[List[float]] = Field(default=None, description="90% credible interval for probability [low, high]")
     actors: List[Actor] = Field(default_factory=list, description="Named actors driving this event")
+    citations: List[Citation] = Field(default_factory=list, description="Retrieved sources supporting this event")
 
 
 class PredictionBranch(BaseModel):
@@ -76,6 +87,7 @@ class PredictionResult(BaseModel):
     summary: str = Field(default="", description="Global narrative of the most plausible future")
     graph_nodes: List[PredictionNode]
     context_used: List[str]
+    sources: List[Citation] = Field(default_factory=list, description="All retrieved evidence sources")
     model_used: str
     timestamp: float
 
