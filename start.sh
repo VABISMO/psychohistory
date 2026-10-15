@@ -19,6 +19,7 @@ echo "Backend PID: $!  -> http://localhost:8000"
 
 # --- Frontend ---
 pkill -f "[n]ext dev" 2>/dev/null || true
+pkill -f "[n]ext-server" 2>/dev/null || true
 sleep 1
 cd "$ROOT/frontend"
 setsid nohup npm run dev -- --port 3000 \

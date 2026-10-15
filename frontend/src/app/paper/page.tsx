@@ -39,10 +39,10 @@ function Code({ children }: { children: string }) {
 export default function PaperPage() {
   return (
     <div className="grid-bg min-h-screen">
-      <div className="mx-auto max-w-3xl px-5 py-10">
+      <div className="print-sheet mx-auto max-w-3xl px-5 py-10">
         <Link
           href="/"
-          className="no-print mb-8 inline-flex items-center gap-1.5 text-xs text-muted-foreground transition hover:text-foreground"
+          className="mb-8 inline-flex items-center gap-1.5 text-xs text-muted-foreground transition hover:text-foreground"
         >
           <ArrowLeft className="size-3.5" /> Back to the harness
         </Link>

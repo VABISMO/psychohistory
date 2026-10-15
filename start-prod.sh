@@ -23,6 +23,7 @@ echo "Backend  -> http://localhost:8000"
 
 # --- Frontend (production server) ---
 pkill -f "[n]ext start" 2>/dev/null || true
+pkill -f "[n]ext-server" 2>/dev/null || true
 sleep 1
 ( cd "$ROOT/frontend" && setsid nohup ./node_modules/.bin/next start --port 3000 \
     > "$LOGDIR/frontend.log" 2>&1 < /dev/null & )
