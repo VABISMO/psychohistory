@@ -51,18 +51,18 @@ improbable event fails to occur, the more likely it becomes"* — is a **hazard 
 with *increasing* baseline hazard (a renewal / wearing‑out process).
 
 - [ ] Introduce an explicit continuous time axis for every event (start, end, expected onset).
-- [ ] Add a **hazard function** `h(t)` per event class; survival `S(t)=exp(−∫₀ᵗ h)`.
-- [ ] Use a **Weibull** hazard for "overdue" phenomena: `h(t) = (k/λ)(t/λ)^(k−1)` with
+- [x] Add a **hazard function** `h(t)` per event class; survival `S(t)=exp(−∫₀ᵗ h)`.
+- [x] Use a **Weibull** hazard for "overdue" phenomena: `h(t) = (k/λ)(t/λ)^(k−1)` with
       `k > 1` (increasing) — probability rises the longer the event is absent. `k = 1`
       recovers the memoryless Poisson case; `k < 1` models "the risk decays with calm".
-- [ ] Conditional update: `P(event in (t, t+Δt] | none so far) = 1 − exp(−∫_t^{t+Δt} h)`.
-- [ ] **Renewal process** for recurring events (elections, cycles): track time since last
+- [x] Conditional update: `P(event in (t, t+Δt] | none so far) = 1 − exp(−∫_t^{t+Δt} h)`.
+- [x] **Renewal process** for recurring events (elections, cycles): track time since last
       occurrence and modulate the rate.
-- [ ] Self-exciting processes (**Hawkes**) for clustering: one event raises the short-term
+- [x] Self-exciting processes (**Hawkes**) for clustering: one event raises the short-term
       rate of others (protests, bank runs, conflict escalation).
-- [ ] **Heavy tails / black swans**: model impact (not just probability) with a fat-tailed
+- [x] **Heavy tails / black swans**: model impact (not just probability) with a fat-tailed
       distribution (Pareto / log-normal); apply **Extreme Value Theory** for the tail.
-- [ ] Separate **probability** from **impact severity** into two dimensions; a rare × huge
+- [x] Separate **probability** from **impact severity** into two dimensions; a rare × huge
       event must be able to dominate the ranking.
 - [ ] "Stress" clock per region: cumulative absence of an expected shock raises its odds.
 
@@ -141,12 +141,12 @@ with *increasing* baseline hazard (a renewal / wearing‑out process).
 
 ### I. Evaluation — **P0** *(without this we cannot claim progress)*
 
-- [ ] Build a **backtesting harness**: run the engine on past-dated scenarios, compare to
-      what actually happened.
-- [ ] Score with **Brier score**, **log loss**, **calibration curves**, rank histograms.
-- [ ] Track lead-time accuracy (predicted date vs actual).
-- [ ] Maintain a labelled dataset of resolved events for regression testing.
-- [ ] Report a public scoreboard per model/prompt version.
+- [x] Build a **backtesting harness**: run the engine on past-dated scenarios, compare to
+      what actually happened. *(timing backtest in section A; general harness in `backend/evaluation`)*
+- [x] Score with **Brier score**, **log loss**, **calibration curves**, rank histograms.
+- [x] Track lead-time accuracy (predicted date vs actual).
+- [x] Maintain a labelled dataset of resolved events for regression testing. *(30 events)*
+- [x] Report a scoreboard per model/prompt version. *(`evaluation/scoreboard.py`)*
 
 ### J. Ethics & safety — **P1**
 
