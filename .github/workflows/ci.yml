@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main, feature/**]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          cd backend
+          pip install --no-cache-dir -r requirements.txt
+      - name: Run stdlib tests
+        run: |
+          cd backend
+          python tests/test_math.py
+          python tests/test_temporal.py
+          python tests/test_coupling.py
+          python tests/test_actors.py
+          python tests/test_uncertainty.py
+          python tests/test_schema.py
+          python tests/test_search.py
+          python tests/test_constraints.py
+          python tests/test_grounding.py
+          python tests/test_metrics.py
+          python tests/test_evaluation.py
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install
+        run: |
+          cd frontend
+          npm ci
+      - name: Typecheck
+        run: |
+          cd frontend
+          npx tsc --noEmit
+      - name: Lint
+        run: |
+          cd frontend
+          npx eslint . --max-warnings 200
+      - name: Build
+        run: |
+          cd frontend
+          npx next build
