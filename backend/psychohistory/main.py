@@ -98,3 +98,11 @@ async def predict(request: PredictionRequest):
 async def list_predictions(limit: int = 20):
     docs = list(coll.find({}, {"_id": 0}).limit(limit))
     return {"count": len(docs), "predictions": docs}
+
+
+@app.get("/predictions/{prediction_id}")
+async def get_prediction(prediction_id: str):
+    doc = coll.find_one({"prediction_id": prediction_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Prediction not found")
+    return {"status": "success", "data": doc}

@@ -94,3 +94,13 @@ export async function fetchModels(): Promise<{ models: string[]; ollama_availabl
   const res = await fetch(`${API_BASE}/models`);
   return res.json();
 }
+
+export async function fetchPrediction(id: string): Promise<PredictionResult> {
+  const res = await fetch(`${API_BASE}/predictions/${id}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Unknown error" }));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+  const json = await res.json();
+  return json.data as PredictionResult;
+}
