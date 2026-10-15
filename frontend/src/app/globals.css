@@ -100,3 +100,88 @@ body {
 
 .react-flow__attribution { display: none; }
 .react-flow__background { background: transparent; }
+
+/* ── Print: light, clean, backgrounds preserved ───────────────── */
+@media print {
+  :root {
+    --background: #ffffff;
+    --foreground: oklch(0.25 0.02 265);
+    --card: #ffffff;
+    --card-foreground: oklch(0.25 0.02 265);
+    --popover: #ffffff;
+    --popover-foreground: oklch(0.25 0.02 265);
+    --primary: oklch(0.48 0.14 265);
+    --primary-foreground: #ffffff;
+    --secondary: oklch(0.95 0.01 265);
+    --secondary-foreground: oklch(0.25 0.02 265);
+    --muted: oklch(0.95 0.01 265);
+    --muted-foreground: oklch(0.45 0.01 265);
+    --accent: oklch(0.6 0.15 200);
+    --accent-foreground: oklch(0.15 0.02 265);
+    --destructive: oklch(0.55 0.2 25);
+    --destructive-foreground: #ffffff;
+    --border: oklch(0.87 0 0);
+    --input: oklch(0.87 0 0);
+    --ring: oklch(0.48 0.14 265);
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: var(--foreground);
+  }
+
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  .grid-bg {
+    background-image: none !important;
+  }
+
+  .glow-primary {
+    box-shadow: none !important;
+  }
+
+  /* hide interactive chrome */
+  .no-print {
+    display: none !important;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  article {
+    background: #ffffff !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    border-color: var(--border) !important;
+    padding: 0 !important;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .avoid-break,
+  pre,
+  table,
+  tr,
+  img,
+  svg {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+

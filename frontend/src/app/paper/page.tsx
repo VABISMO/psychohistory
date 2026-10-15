@@ -2,9 +2,11 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { ArrowLeft, BrainCircuit } from "lucide-react";
 
+const YEAR = 2026;
+
 function Formula({ children, label }: { children: string; label?: string }) {
   return (
-    <div className="my-4 overflow-x-auto rounded-lg border border-border bg-background/60 px-4 py-3">
+    <div className="avoid-break my-4 overflow-x-auto rounded-lg border border-border bg-background/60 px-4 py-3">
       <div className="whitespace-pre font-mono text-[13px] leading-relaxed text-primary">
         {children}
       </div>
@@ -40,7 +42,7 @@ export default function PaperPage() {
       <div className="mx-auto max-w-3xl px-5 py-10">
         <Link
           href="/"
-          className="mb-8 inline-flex items-center gap-1.5 text-xs text-muted-foreground transition hover:text-foreground"
+          className="no-print mb-8 inline-flex items-center gap-1.5 text-xs text-muted-foreground transition hover:text-foreground"
         >
           <ArrowLeft className="size-3.5" /> Back to the harness
         </Link>
@@ -61,7 +63,7 @@ export default function PaperPage() {
               A hybrid mathematical–LLM engine for grounded socio-political forecasting
             </p>
             <p className="mt-4 text-xs text-muted-foreground">
-              Psychohistory Research · Version 1.0 · {new Date().getFullYear()}
+              Psychohistory Research · Version 1.0 · {YEAR}
             </p>
           </header>
 
@@ -424,7 +426,7 @@ export default function PaperPage() {
           </Section>
 
           <footer className="mt-12 border-t border-border pt-5 text-center text-[11px] text-muted-foreground">
-            © {new Date().getFullYear()} Psychohistory Harness · Generated locally,
+            © {YEAR} Psychohistory Harness · Generated locally,
             deterministically documented.
           </footer>
         </article>
