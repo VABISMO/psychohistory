@@ -90,12 +90,12 @@ with *increasing* baseline hazard (a renewal / wearing‑out process).
 
 ### D. Probabilistic rigour & calibration — **P1**
 
-- [ ] **Bayesian updating**: informative priors from base rates; update on new evidence.
-- [ ] **Monte Carlo** propagation of uncertainty; output **credible intervals**, not point values.
-- [ ] **Ensemble** over models and over LLM samples; aggregate by proper scoring rules.
-- [ ] **Markov chains / HMMs** for state transitions (regime shifts).
-- [ ] Sensitivity analysis: which parameters move the answer most.
-- [ ] Explicit, documented priors; remove magic constants (or justify them).
+- [x] **Bayesian updating**: informative priors from base rates; update on new evidence. *(Beta-Bernoulli + Normal-Normal in `uncertainty.py`)*
+- [x] **Monte Carlo** propagation of uncertainty; output **credible intervals**, not point values. *(per-event 90% CI + `mc_summary`/`propagate`)*
+- [x] **Ensemble** over models and over LLM samples; aggregate by proper scoring rules. *(log-odds / linear pools + spread; scored by `evaluation/scoreboard`)*
+- [x] **Markov chains / HMMs** for state transitions (regime shifts). *(Markov step/stationary, HMM forward + Viterbi)*
+- [x] Sensitivity analysis: which parameters move the answer most. *(`one_at_a_time`)*
+- [ ] Explicit, documented priors; remove magic constants (or justify them). *(priors documented in `uncertainty.py`; predictor constants still to be revisited)*
 
 ### E. Grounding & data — **P1**
 

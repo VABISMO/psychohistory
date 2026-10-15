@@ -13,6 +13,7 @@ from .limiter import ollama_bottleneck, with_retries
 from . import temporal as temporal_math
 from . import coupling as coupling_math
 from . import actors as actors_math
+from . import uncertainty as uncertainty_math
 
 OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_MODEL = "llama3"
@@ -32,6 +33,10 @@ COUPLING_ENABLED = os.getenv("PSYCHO_COUPLING", "1").lower() not in ("0", "false
 # to nudge branch probabilities. Set PSYCHO_ACTORS=0 for the previous behaviour.
 ACTORS_ENABLED = os.getenv("PSYCHO_ACTORS", "1").lower() not in ("0", "false", "no", "off")
 ACTOR_SHIFT_STRENGTH = 0.5
+
+# ROADMAP section D: a Beta credible interval around each event's probability.
+UNCERTAINTY_ENABLED = os.getenv("PSYCHO_UNCERTAINTY", "1").lower() not in ("0", "false", "no", "off")
+UNCERTAINTY_STRENGTH = 6.0
 
 
 def _get_available_models() -> List[str]:
@@ -132,6 +137,26 @@ def _attach_temporal(event: Event) -> Event:
     return event
 
 
+def _attach_uncertainty(event: Event) -> Event:
+    """Attach a 90% credible interval to the event probability (ROADMAP section D).
+
+    A Beta prior is built from the point probability (as base rate) with a modest
+    pseudo-sample strength, and the equal-tailed 90% interval is read off. Purely
+    additive; disabled with PSYCHO_UNCERTAINTY=0. Failures are swallowed.
+    """
+    if not UNCERTAINTY_ENABLED or event.probability_ci is not None:
+        return event
+    try:
+        a, b = uncertainty_math.beta_prior_from_base_rate(
+            event.probability, UNCERTAINTY_STRENGTH
+        )
+        lo, hi = uncertainty_math.credible_interval(a, b, 0.9)
+        event.probability_ci = [round(lo, 4), round(hi, 4)]
+    except Exception as e:
+        print(f"[PREDICT] uncertainty assess skipped ({type(e).__name__}: {e})")
+    return event
+
+
 BRANCH_EN = {
     "same": "continuation of the current trend",
     "max": "high-probability (optimistic) scenario",
@@ -167,7 +192,7 @@ def _generate_event(prompt: str, depth: int, parent_event: Optional[str] = None,
             f"Trend {TREND_EN.get(trend, trend)}, magnitude {magnitude:.2f}, horizon {year}."
         )
 
-    return _attach_temporal(Event(
+    ev = Event(
         name=name,
         description=description,
         probability=round(magnitude * 0.8, 4),
@@ -177,7 +202,10 @@ def _generate_event(prompt: str, depth: int, parent_event: Optional[str] = None,
         year=year,
         date=f"{year}",
         duration="months",
-    ))
+    )
+    _attach_temporal(ev)
+    _attach_uncertainty(ev)
+    return ev
 
 
 def _build_tree(prompt: str, depth: int, parent_id: str = "", parent_event: str = "", current_depth: int = 0) -> List[PredictionNode]:
@@ -714,6 +742,7 @@ async def _llm_flat_tree(
 
 def _event_to_node(event: Event, level: int, parent_id: Optional[str], branch_type: str) -> PredictionNode:
     _attach_temporal(event)
+    _attach_uncertainty(event)
     s_p, _, _ = _compute_probability(event.magnitude, event.trend, event.radiant, level - 1)
     return PredictionNode(
         id=str(uuid.uuid4())[:8],

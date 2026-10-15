@@ -45,6 +45,7 @@ class Event(BaseModel):
     date: str = Field(default="", description="Approximate date it occurs, e.g. 'Nov 2029'")
     duration: str = Field(default="", description="How long it lasts, e.g. '6 months'")
     temporal: Optional[TemporalInfo] = Field(default=None, description="Temporal / rare-event statistics")
+    probability_ci: Optional[List[float]] = Field(default=None, description="90% credible interval for probability [low, high]")
     actors: List[Actor] = Field(default_factory=list, description="Named actors driving this event")
 
 
