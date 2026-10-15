@@ -7,8 +7,6 @@
 Inspired by Asimov's *Foundation*, it projects branching futures from any scenario —
 every number grounded in the live web, every probability computed by a transparent model.
 
-<img width="1682" height="895" alt="image" src="https://github.com/user-attachments/assets/4ae571ec-839a-4a85-a325-473bed5f6bb8" />
-
 [![Backend](https://img.shields.io/badge/backend-FastAPI-009688?logo=fastapi&logoColor=white)](#-architecture)
 [![Frontend](https://img.shields.io/badge/frontend-Next.js%2016-000000?logo=next.js&logoColor=white)](#-architecture)
 [![Inference](https://img.shields.io/badge/inference-Ollama%20(local)-FF6F00)](https://ollama.com)
@@ -18,6 +16,7 @@ every number grounded in the live web, every probability computed by a transpare
 </div>
 
 ---
+<img width="1682" height="895" alt="image" src="https://github.com/user-attachments/assets/4ae571ec-839a-4a85-a325-473bed5f6bb8" />
 
 ## ✨ Features
 
