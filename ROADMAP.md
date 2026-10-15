@@ -99,14 +99,14 @@ with *increasing* baseline hazard (a renewal / wearing‑out process).
 
 ### E. Grounding & data — **P1**
 
-- [ ] Per-event **citations** (source URL + snippet) surfaced in the UI.
+- [x] Per-event **citations** (source URL + snippet) surfaced in the UI. *(`grounding.py` attribution + `Citation` model + Sources panel)*
 - [ ] Add sources: **GDELT**, **ACLED**, **Wikidata**, polling aggregators, IMF/World Bank,
-      election databases, market/odds data.
-- [ ] Structured **numeric constraint store** (chambers, budgets, populations, records) with
-      automatic validation of every number the LLM emits.
-- [ ] Temporal grounding: resolve "next election", "in N years" to real ISO dates.
+      election databases, market/odds data. *(still Google News + Wikipedia only)*
+- [x] Structured **numeric constraint store** (chambers, budgets, populations, records) with
+      automatic validation of every number the LLM emits. *(`constraints.py`, enforced on each event)*
+- [x] Temporal grounding: resolve "next election", "in N years" to real ISO dates. *(relative refs → ISO dates in `grounding.py`)*
 - [ ] Fact verification / contradiction detection across sources.
-- [ ] Caching & provenance for retrieved evidence.
+- [x] Caching & provenance for retrieved evidence. *(provenance via citations with URL + `retrieved_at`; response caching still pending)*
 
 ### F. LLM & inference — **P1**
 

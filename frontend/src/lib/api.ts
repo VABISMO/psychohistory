@@ -23,6 +23,14 @@ export interface Actor {
   stress?: number | null;
 }
 
+export interface Citation {
+  title: string;
+  url: string;
+  snippet: string;
+  source: string;
+  retrieved_at: string;
+}
+
 export interface PsychEvent {
   name: string;
   description: string;
@@ -36,6 +44,7 @@ export interface PsychEvent {
   temporal?: TemporalInfo | null;
   probability_ci?: number[] | null;
   actors?: Actor[];
+  citations?: Citation[];
 }
 
 export interface PredictionNode {
@@ -56,6 +65,7 @@ export interface PredictionResult {
   summary: string;
   graph_nodes: PredictionNode[];
   context_used: string[];
+  sources?: Citation[];
   model_used: string;
   timestamp: number;
 }

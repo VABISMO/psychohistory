@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from .config_db import coll
-from .services.search import retrieve_context, retrieve_constraints
+from .services.search import retrieve_context, retrieve_constraints, retrieve_sources
 from .services.predictor import generate_prediction_ollama, save_prediction
 from .services.limiter import general_limiter, predict_limiter
 
@@ -75,9 +75,10 @@ async def predict(request: PredictionRequest):
     try:
         import asyncio as _asyncio
 
-        context, constraints = await _asyncio.gather(
+        context, constraints, sources = await _asyncio.gather(
             retrieve_context(request.prompt),
             retrieve_constraints(request.prompt),
+            retrieve_sources(request.prompt),
         )
         result = await generate_prediction_ollama(
             prompt=request.prompt,
@@ -85,6 +86,7 @@ async def predict(request: PredictionRequest):
             context=context,
             model=request.model,
             constraints=constraints,
+            sources=sources,
         )
         await save_prediction(result)
         return {"status": "success", "data": result.model_dump()}
