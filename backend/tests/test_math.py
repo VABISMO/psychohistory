@@ -273,6 +273,84 @@ def test_assemble_tree_parent_links():
             assert child.parent_id == root.id
 
 
+def test_temporal_attached_to_events():
+    """ROADMAP section A: events carry a temporal block by default."""
+    from psychohistory.services import predictor as P
+
+    nodes = P._build_tree("test temporal", 2)
+    temporal_events = 0
+
+    def walk(ns):
+        nonlocal temporal_events
+        for n in ns:
+            if n.event.temporal is not None:
+                temporal_events += 1
+                t = n.event.temporal
+                assert t.shape_k is not None and t.shape_k > 0.0
+                assert t.scale_lambda is not None and t.scale_lambda > 0.0
+                assert 0.0 <= (t.occurrence_prob or 0.0) <= 1.0
+                assert t.median_onset is not None and t.median_onset > 0.0
+            walk(n.children)
+
+    walk(nodes)
+    assert temporal_events == 12, f"esperados 12 eventos con temporal, hay {temporal_events}"
+
+
+def test_event_to_node_attaches_temporal():
+    from psychohistory.services import predictor as P
+
+    ev = _make_event("e", "d")
+    node = P._event_to_node(ev, 1, None, "same")
+    assert node.event.temporal is not None
+    assert node.event.temporal.tail_alpha is not None
+
+
+def test_temporal_can_be_disabled(monkeypatch=None):
+    """PSYCHO_TEMPORAL=0 must restore the exact previous behaviour."""
+    import importlib
+    import os as _os
+    from psychohistory.services import predictor as P
+
+    _os.environ["PSYCHO_TEMPORAL"] = "0"
+    try:
+        importlib.reload(P)
+        assert P.TEMPORAL_ENABLED is False
+        ev = _make_event("e", "d")
+        out = P._attach_temporal(ev)
+        assert out.temporal is None
+    finally:
+        _os.environ.pop("PSYCHO_TEMPORAL", None)
+        importlib.reload(P)
+
+
+def test_temporal_values_are_json_finite():
+    """No inf/nan may leak into the payload (JSON safety)."""
+    from psychohistory.services import predictor as P
+
+    nodes = P._build_tree("finite check", 2)
+
+    def walk(ns):
+        for n in ns:
+            t = n.event.temporal
+            if t is not None:
+                for v in t.model_dump().values():
+                    if v is not None:
+                        assert math.isfinite(v), f"valor no finito: {v}"
+            walk(n.children)
+
+    walk(nodes)
+
+
+def test_build_tree_still_deterministic_shape():
+    """Adding temporal must not change the tree shape."""
+    nodes = _build_tree("shape", 3)
+
+    def count(ns):
+        return sum(1 + count(n.children) for n in ns)
+
+    assert count(nodes) == 39
+
+
 if __name__ == "__main__":
     import inspect
 
