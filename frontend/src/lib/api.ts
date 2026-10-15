@@ -1,3 +1,19 @@
+export interface TemporalInfo {
+  occurrence_prob: number | null;
+  shape_k: number | null;
+  scale_lambda: number | null;
+  survival_horizon: number | null;
+  hazard_now: number | null;
+  median_onset: number | null;
+  mean_onset: number | null;
+  conditional_next: number | null;
+  overdue_factor: number | null;
+  tail_alpha: number | null;
+  severity_mean: number | null;
+  tail_es: number | null;
+  risk_score: number | null;
+}
+
 export interface PsychEvent {
   name: string;
   description: string;
@@ -8,6 +24,7 @@ export interface PsychEvent {
   year: number;
   date: string;
   duration: string;
+  temporal?: TemporalInfo | null;
 }
 
 export interface PredictionNode {

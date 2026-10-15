@@ -1,17 +1,24 @@
 import httpx
 import json
 import math
+import os
 import random
 import re
 import uuid
 import time
 from typing import List, Optional, Tuple
-from ..models import PredictionResult, PredictionNode, Event
+from ..models import PredictionResult, PredictionNode, Event, TemporalInfo
 from ..config_db import coll
 from .limiter import ollama_bottleneck, with_retries
+from . import temporal as temporal_math
 
 OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_MODEL = "llama3"
+
+# ROADMAP section A: temporal / rare-event enrichment. Additive and flag-gated;
+# set PSYCHO_TEMPORAL=0 to disable and restore the exact previous behaviour.
+TEMPORAL_ENABLED = os.getenv("PSYCHO_TEMPORAL", "1").lower() not in ("0", "false", "no", "off")
+EPOCH_YEAR = 2026
 
 
 PREFERRED_MODELS = ["llama3", "llama3:latest", "llama3.1", "gemma4:latest", "gemma4"]
@@ -81,6 +88,40 @@ def _compute_probability(magnitude: float, trend: str, radiant: bool, depth: int
     )
 
 
+def _finite_or_none(x) -> Optional[float]:
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    return v if math.isfinite(v) else None
+
+
+def _attach_temporal(event: Event) -> Event:
+    """Attach temporal / rare-event statistics to an event (ROADMAP section A).
+
+    Purely additive: it never changes the existing probability, magnitude or
+    branch structure. Disabled when PSYCHO_TEMPORAL=0. Failures are swallowed so
+    the predictor can never break because of the temporal layer.
+    """
+    if not TEMPORAL_ENABLED or event.temporal is not None:
+        return event
+    try:
+        horizon = max(1.0, float(event.year) - EPOCH_YEAR)
+        assessment = temporal_math.assess(
+            base_prob=event.probability,
+            trend=event.trend,
+            magnitude=event.magnitude,
+            horizon=horizon,
+            age=0.0,
+        )
+        event.temporal = TemporalInfo(
+            **{k: _finite_or_none(v) for k, v in assessment.items()}
+        )
+    except Exception as e:
+        print(f"[PREDICT] temporal assess skipped ({type(e).__name__}: {e})")
+    return event
+
+
 BRANCH_EN = {
     "same": "continuation of the current trend",
     "max": "high-probability (optimistic) scenario",
@@ -116,7 +157,7 @@ def _generate_event(prompt: str, depth: int, parent_event: Optional[str] = None,
             f"Trend {TREND_EN.get(trend, trend)}, magnitude {magnitude:.2f}, horizon {year}."
         )
 
-    return Event(
+    return _attach_temporal(Event(
         name=name,
         description=description,
         probability=round(magnitude * 0.8, 4),
@@ -126,7 +167,7 @@ def _generate_event(prompt: str, depth: int, parent_event: Optional[str] = None,
         year=year,
         date=f"{year}",
         duration="months",
-    )
+    ))
 
 
 def _build_tree(prompt: str, depth: int, parent_id: str = "", parent_event: str = "", current_depth: int = 0) -> List[PredictionNode]:
@@ -556,6 +597,7 @@ async def _llm_flat_tree(
 
 
 def _event_to_node(event: Event, level: int, parent_id: Optional[str], branch_type: str) -> PredictionNode:
+    _attach_temporal(event)
     s_p, _, _ = _compute_probability(event.magnitude, event.trend, event.radiant, level - 1)
     return PredictionNode(
         id=str(uuid.uuid4())[:8],

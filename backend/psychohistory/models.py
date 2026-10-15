@@ -2,6 +2,28 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
+class TemporalInfo(BaseModel):
+    """Temporal / rare-event statistics attached to an event (ROADMAP section A).
+
+    All fields are optional and default to ``None`` so that older stored
+    predictions and clients remain valid, and so non-finite values (e.g. an
+    infinite Pareto mean) can be omitted safely from JSON.
+    """
+    occurrence_prob: Optional[float] = Field(default=None, description="P(occurs within horizon)")
+    shape_k: Optional[float] = Field(default=None, description="Weibull hazard shape (>1 = overdue)")
+    scale_lambda: Optional[float] = Field(default=None, description="Weibull scale (years)")
+    survival_horizon: Optional[float] = Field(default=None, description="S(horizon)")
+    hazard_now: Optional[float] = Field(default=None, description="Instantaneous hazard at time 0")
+    median_onset: Optional[float] = Field(default=None, description="Median time to onset (years)")
+    mean_onset: Optional[float] = Field(default=None, description="Mean time to onset (years)")
+    conditional_next: Optional[float] = Field(default=None, description="P(occurs in next window | not yet)")
+    overdue_factor: Optional[float] = Field(default=None, description="Conditional vs baseline (>1 = overdue)")
+    tail_alpha: Optional[float] = Field(default=None, description="Pareto tail index (small = heavy tail)")
+    severity_mean: Optional[float] = Field(default=None, description="Mean severity (impact units)")
+    tail_es: Optional[float] = Field(default=None, description="Expected shortfall of severity")
+    risk_score: Optional[float] = Field(default=None, description="P(occurs) * severity * magnitude")
+
+
 class Event(BaseModel):
     name: str = Field(description="Short concrete event headline")
     description: str = Field(description="Concrete description naming real actors and outcome")
@@ -12,6 +34,7 @@ class Event(BaseModel):
     year: int = Field(description="Estimated year of the event")
     date: str = Field(default="", description="Approximate date it occurs, e.g. 'Nov 2029'")
     duration: str = Field(default="", description="How long it lasts, e.g. '6 months'")
+    temporal: Optional[TemporalInfo] = Field(default=None, description="Temporal / rare-event statistics")
 
 
 class PredictionBranch(BaseModel):

@@ -15,7 +15,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { Sparkles, TrendingUp, TrendingDown, Minus, Activity, X, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { PredictionNode, PsychEvent } from "@/lib/api";
+import type { PredictionNode, PsychEvent, TemporalInfo } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 
 const BRANCH_COLORS: Record<string, string> = {
@@ -307,6 +307,8 @@ export function PredictionGraph({
             <Info label="Radiant" value={selected.event.radiant ? "yes" : "no"} />
             <Info label="Stability" value={selected.stability_index.toFixed(3)} />
           </dl>
+
+          {selected.event.temporal && <TemporalDetails t={selected.event.temporal} />}
         </div>
       )}
 
@@ -340,6 +342,41 @@ export function PredictionGraph({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function TemporalDetails({ t }: { t: TemporalInfo }) {
+  const pct = (v: number | null) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
+  const num = (v: number | null, digits = 2) => (v == null ? "—" : v.toFixed(digits));
+  const years = (v: number | null) => (v == null ? "—" : `${v.toFixed(1)}y`);
+
+  const overdue = t.overdue_factor ?? 1;
+  const overdueLabel =
+    overdue > 1.02 ? "rising (overdue)" : overdue < 0.98 ? "cooling off" : "memoryless";
+  const tailLabel =
+    t.tail_alpha == null
+      ? "—"
+      : t.tail_alpha < 2
+        ? `${num(t.tail_alpha)} (black swan)`
+        : `${num(t.tail_alpha)} (moderate)`;
+
+  return (
+    <div className="mt-3 border-t border-border pt-3">
+      <div className="mb-2 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+        <Activity className="size-3" /> Temporal dynamics
+      </div>
+      <dl className="grid grid-cols-3 gap-2 text-xs">
+        <Info label="Onset (median)" value={years(t.median_onset)} />
+        <Info label="Occurs by horizon" value={pct(t.occurrence_prob)} />
+        <Info label="Hazard shape k" value={num(t.shape_k)} />
+        <Info label="Next window" value={pct(t.conditional_next)} />
+        <Info label="Overdue factor" value={`${num(overdue)} · ${overdueLabel}`} />
+        <Info label="Tail index α" value={tailLabel} />
+        <Info label="Severity (mean)" value={num(t.severity_mean)} />
+        <Info label="Tail risk (ES)" value={num(t.tail_es)} />
+        <Info label="Risk score" value={num(t.risk_score)} />
+      </dl>
     </div>
   );
 }
