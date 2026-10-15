@@ -1,8 +1,15 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { ArrowLeft, BrainCircuit } from "lucide-react";
 
 const YEAR = 2026;
+
+export const metadata: Metadata = {
+  title: "Whitepaper · Psychohistory · Future Graph Dynamics",
+  description:
+    "Technical whitepaper: architecture, live grounding and the mathematical model behind the Psychohistory forecasting engine.",
+};
 
 function Formula({ children, label }: { children: string; label?: string }) {
   return (
@@ -44,7 +51,7 @@ export default function PaperPage() {
           href="/"
           className="mb-8 inline-flex items-center gap-1.5 text-xs text-muted-foreground transition hover:text-foreground"
         >
-          <ArrowLeft className="size-3.5" /> Back to the harness
+          <ArrowLeft className="size-3.5" /> Back to the app
         </Link>
 
         <article className="rounded-2xl border border-border bg-card/80 p-8 shadow-2xl backdrop-blur-md md:p-12">
@@ -57,13 +64,13 @@ export default function PaperPage() {
               </span>
             </div>
             <h1 className="text-3xl font-black leading-tight tracking-tight md:text-4xl">
-              The Psychohistory Harness
+              Psychohistory <span className="text-primary">·</span> Future Graph Dynamics
             </h1>
             <p className="mt-2 text-base text-muted-foreground">
               A hybrid mathematical–LLM engine for grounded socio-political forecasting
             </p>
             <p className="mt-4 text-xs text-muted-foreground">
-              Psychohistory Research · Version 1.0 · {YEAR}
+              Future Graph Dynamics · Version 1.0 · {YEAR}
             </p>
           </header>
 
@@ -73,15 +80,15 @@ export default function PaperPage() {
               Abstract
             </p>
             <p className="text-sm italic leading-relaxed text-foreground/90">
-              We present the Psychohistory Harness, an open forecasting system inspired by
-              Asimov&apos;s fictional science. The engine projects branching futures from any
-              user-supplied socio-political scenario by combining a transparent probabilistic
-              core with a large language model operating under strict factual grounding. Real
-              news and encyclopedic sources are retrieved live from the web; institutional
-              maxima, totals and records are harvested online and injected as hard numeric
-              constraints, so the model can never emit impossible figures (e.g. a seat count
-              exceeding a chamber&apos;s real size). The output is a convergent tree of events,
-              each annotated with probability, magnitude, trend, an estimated date and
+              We present Psychohistory · Future Graph Dynamics, an open forecasting system
+              inspired by Asimov&apos;s fictional science. The engine projects branching futures
+              from any user-supplied socio-political scenario by combining a transparent
+              probabilistic core with a large language model operating under strict factual
+              grounding. Real news and encyclopedic sources are retrieved live from the web;
+              institutional maxima, totals and records are harvested online and injected as hard
+              numeric constraints, so the model can never emit impossible figures (e.g. a seat
+              count exceeding a chamber&apos;s real size). The output is a convergent tree of
+              events, each annotated with probability, magnitude, trend, an estimated date and
               duration, plus a global narrative summarising the most plausible future. This
               paper specifies the full architecture and every mathematical component.
             </p>
@@ -91,14 +98,14 @@ export default function PaperPage() {
             <p>
               Psychohistory, in Asimov&apos;s Foundation, treats the behaviour of large human
               populations as a statistical system whose aggregate dynamics can be predicted even
-              though individuals cannot. The Harness operationalises this intuition: it does not
+              though individuals cannot. The system operationalises this intuition: it does not
               attempt to divine discrete events with certainty, but to enumerate the space of
               plausible trajectories and weigh them probabilistically.
             </p>
             <p>
               The central engineering problem is <em>grounding</em>. A purely generative model
               will confidently invent impossible facts — a party winning 400 seats in a
-              350-seat chamber, a percentage above 100%, a record that never existed. The Harness
+              350-seat chamber, a percentage above 100%, a record that never existed. The system
               therefore couples two subsystems: (i) a <strong>deterministic mathematical core</strong>{" "}
               that guarantees well-defined probabilities, invariants and a bounded tree; and (ii)
               a <strong>semantic layer</strong> driven by a local LLM that fills the nodes with
@@ -474,7 +481,7 @@ export default function PaperPage() {
           </Section>
 
           <footer className="mt-12 border-t border-border pt-5 text-center text-[11px] text-muted-foreground">
-            © {YEAR} Psychohistory Harness · Generated locally,
+            © {YEAR} Psychohistory · Future Graph Dynamics · Generated locally,
             deterministically documented.
           </footer>
         </article>

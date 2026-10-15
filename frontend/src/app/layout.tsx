@@ -13,15 +13,15 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Psicohistoria · Harness de prediccion",
+  title: "Psychohistory · Future Graph Dynamics",
   description:
-    "Prediccion de dinamica civilizatoria mediante grafos convergentes y probabilidades de tendencia.",
+    "Forecasting civilizational dynamics through convergent graphs and trend probabilities.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
-      lang="es"
+      lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>

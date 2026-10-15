@@ -7,14 +7,14 @@ from urllib.parse import quote, quote_plus
 import httpx
 
 CURATED_SOURCES = [
-    "World Bank - World Development Indicators (Gini, GDP, gobernanza)",
-    "Freedom House - Freedom in the World Report (indices de libertad)",
+    "World Bank - World Development Indicators (Gini, GDP, governance)",
+    "Freedom House - Freedom in the World Report (freedom indices)",
     "Pew Research Center - Social Trust & Polarization surveys",
-    "Our World in Data - indicadores sociales y economicos de largo plazo",
+    "Our World in Data - long-run social and economic indicators",
     "Transparency International - Corruption Perceptions Index",
     "V-Dem Institute - Democracy indices",
-    "arXiv / JSTOR - complejidad, redes y resiliencia social",
-    "Archivos historicos - transiciones de regimen, colapsos, revoluciones",
+    "arXiv / JSTOR - social complexity, networks and resilience",
+    "Historical archives - regime transitions, collapses, revolutions",
 ]
 
 _HEADERS = {
@@ -43,10 +43,10 @@ async def _google_news(query: str, limit: int = 8) -> List[str]:
             source = (source_el.text if source_el is not None and source_el.text else "").strip()
             if title:
                 extra = " · ".join(x for x in [source, pub] if x)
-                out.append(f"NOTICIA: {title}" + (f" ({extra})" if extra else ""))
+                out.append(f"NEWS: {title}" + (f" ({extra})" if extra else ""))
         return out
     except Exception as e:
-        print(f"[SEARCH] Google News fallo: {type(e).__name__}")
+        print(f"[SEARCH] Google News failed: {type(e).__name__}")
         return []
 
 
@@ -79,16 +79,16 @@ async def _wikipedia(query: str, limit: int = 3, lang: str = "es") -> List[str]:
                         out.append(f"WIKIPEDIA ({title}): {extract[:320]}")
             return out
     except Exception as e:
-        print(f"[SEARCH] Wikipedia fallo: {type(e).__name__}")
+        print(f"[SEARCH] Wikipedia failed: {type(e).__name__}")
         return []
 
 
 async def retrieve_context(prompt: str, max_results: int = 10) -> List[str]:
     """
-    Recupera contexto real de internet: noticias recientes + enciclopedia + fuentes
-    macro curadas. Todo se inyecta al LLM para fundamentar las predicciones.
+    Retrieve real context from the internet: recent news + encyclopedia + curated
+    macro sources. Everything is injected into the LLM to ground the predictions.
     """
-    print(f"[SEARCH] Recuperando contexto para: '{prompt}'")
+    print(f"[SEARCH] Retrieving context for: '{prompt}'")
 
     news_task = _google_news(prompt)
     wiki_es_task = _wikipedia(prompt, lang="es")
@@ -97,20 +97,20 @@ async def retrieve_context(prompt: str, max_results: int = 10) -> List[str]:
     wiki = wiki_es + wiki_en
 
     context: List[str] = []
-    context.append(f"ESCENARIO DEL USUARIO: {prompt}")
+    context.append(f"USER SCENARIO: {prompt}")
     if news:
-        context.append(f"--- NOTICIAS RECIENTES ({len(news)}) ---")
+        context.append(f"--- RECENT NEWS ({len(news)}) ---")
         context.extend(news)
     if wiki:
-        context.append("--- CONTEXTO ENCICLOPEDICO ---")
+        context.append("--- ENCYCLOPEDIC CONTEXT ---")
         context.extend(wiki)
     if not news and not wiki:
-        context.append("(Sin acceso a busqueda web en vivo; usar conocimiento general)")
+        context.append("(No live web access; use general knowledge)")
 
-    context.append("--- FUENTES DE DATOS DISPONIBLES ---")
+    context.append("--- AVAILABLE DATA SOURCES ---")
     context.append("; ".join(CURATED_SOURCES))
 
-    print(f"[SEARCH] Contexto: {len(news)} noticias, {len(wiki)} entradas wiki")
+    print(f"[SEARCH] Context: {len(news)} news, {len(wiki)} wiki entries")
     return context[: max_results + 4]
 
 

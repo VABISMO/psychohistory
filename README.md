@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🔮 Psychohistory Harness
+# 🔮 Psychohistory · Future Graph Dynamics
 
 **A hybrid mathematical–LLM engine for grounded socio-political forecasting.**
 

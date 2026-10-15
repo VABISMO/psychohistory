@@ -1,4 +1,4 @@
-# 🗺️ Roadmap & Critical Review — Psychohistory Harness
+# 🗺️ Roadmap & Critical Review — Psychohistory · Future Graph Dynamics
 
 This document is an honest, critical assessment of the current engine and a
 prioritised checklist of everything we should build next. It is meant to be

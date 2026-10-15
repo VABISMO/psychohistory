@@ -13,10 +13,10 @@ try:
     client.admin.command("ping")
     db = client[DB_NAME]
     coll = db[COLL_NAME]
-    print("[DB] Conectado a MongoDB nativo")
+    print("[DB] Connected to native MongoDB")
 except Exception:
     import mongomock
     client = mongomock.MongoClient()
     db = client[DB_NAME]
     coll = db[COLL_NAME]
-    print("[DB] MongoDB no disponible, usando mongomock en memoria")
+    print("[DB] MongoDB unavailable, using in-memory mongomock")

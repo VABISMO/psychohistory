@@ -7,7 +7,7 @@ from .services.search import retrieve_context, retrieve_constraints
 from .services.predictor import generate_prediction_ollama, save_prediction
 from .services.limiter import general_limiter, predict_limiter
 
-app = FastAPI(title="Psychohistory API")
+app = FastAPI(title="Psychohistory · Future Graph Dynamics API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,7 +20,7 @@ app.add_middleware(
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    """Limita la tasa de peticiones por cliente (IP) para proteger el LLM en CPU."""
+    """Throttles requests per client (IP) to protect the CPU-bound LLM."""
     client = request.client.host if request.client else "unknown"
     is_predict = request.method == "POST" and request.url.path.startswith("/predict")
     limiter = predict_limiter if is_predict else general_limiter
@@ -30,7 +30,7 @@ async def rate_limit_middleware(request: Request, call_next):
         return JSONResponse(
             status_code=429,
             content={
-                "detail": "Demasiadas peticiones. Espera unos segundos antes de reintentar.",
+                "detail": "Too many requests. Please wait a few seconds before retrying.",
                 "retry_after": round(retry_after, 1),
             },
             headers={
@@ -49,7 +49,7 @@ class PredictionRequest(BaseModel):
 
 @app.get("/")
 def read_root():
-    return {"service": "Psychohistory API", "status": "online"}
+    return {"service": "Psychohistory · Future Graph Dynamics API", "status": "online"}
 
 
 @app.get("/models")

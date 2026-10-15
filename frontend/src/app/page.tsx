@@ -75,7 +75,7 @@ export default function Home() {
             </div>
             <div>
               <h1 className="text-base font-bold leading-tight tracking-tight">
-                Psychohistory <span className="text-primary">·</span> Harness
+                Psychohistory <span className="text-primary">·</span> Future Graph Dynamics
               </h1>
               <p className="text-[11px] text-muted-foreground">
                 Civilizational dynamics prediction · convergent graphs ·{" "}

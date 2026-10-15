@@ -283,7 +283,7 @@ export function PredictionGraph({
         </button>
       </div>
 
-      {/* Panel de detalle */}
+      {/* Detail panel */}
       {selected && (
         <div className="absolute bottom-4 right-4 w-96 rounded-xl border border-border bg-card/95 p-4 shadow-2xl backdrop-blur-md">
           <div className="flex items-start justify-between gap-3">
