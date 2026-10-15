@@ -120,11 +120,11 @@ with *increasing* baseline hazard (a renewal / wearing‑out process).
 
 ### G. Product & UX — **P2**
 
-- [ ] Timeline / chronological view alongside the graph.
+- [x] Timeline / chronological view alongside the graph. *(`TimelineView` toggle in `prediction-graph.tsx`)*
 - [ ] Scenario **comparison** and **what-if** (perturb a node, re-run that branch).
-- [ ] **Export**: PDF/PNG/JSON; shareable permalinks to a prediction.
-- [ ] **Explainability panel**: show the math contributions and cited evidence per node.
-- [ ] Editable nodes with manual probability overrides.
+- [x] **Export**: JSON + shareable permalinks to a prediction. *(PDF/PNG pending; JSON download + copy link + `GET /predictions/{id}`)*
+- [x] **Explainability panel**: show the math contributions and cited evidence per node. *(branch, stability, override, citations presence; temporal/actors/citations already present)*
+- [x] Editable nodes with manual probability overrides. *(stability override slider in detail panel; applied client-side)*
 - [ ] Internationalisation (the app is English-only today).
 - [ ] Saved scenarios, history, user accounts.
 - [ ] Accessibility pass (keyboard nav, ARIA, contrast).

@@ -195,15 +195,7 @@ export default function Home() {
       {/* Graph: fills the rest */}
       <main className="min-h-0 flex-1">
         {result ? (
-          <PredictionGraph
-            nodes={result.graph_nodes}
-            meta={{
-              coherence: result.coherence_index,
-              model: result.model_used,
-              contextCount: result.context_used.length,
-              summary: result.summary,
-            }}
-          />
+          <PredictionGraph result={result} />
         ) : (
           <EmptyState loading={loading} />
         )}

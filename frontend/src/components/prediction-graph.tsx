@@ -13,10 +13,11 @@ import {
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Sparkles, TrendingUp, TrendingDown, Minus, Activity, X, BookOpen, Users, Link2 } from "lucide-react";
+import { Sparkles, TrendingUp, TrendingDown, Minus, Activity, X, BookOpen, Users, Link2, Calendar, GitBranch, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { PredictionNode, PsychEvent, TemporalInfo, Actor, Citation } from "@/lib/api";
+import type { PredictionNode, PsychEvent, TemporalInfo, Actor, Citation, PredictionResult } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
+import { Slider } from "@/components/ui/slider";
 
 const BRANCH_COLORS: Record<string, string> = {
   same: "#8b5cf6",
@@ -142,7 +143,7 @@ const nodeTypes = { event: EventNode };
 const V_GAP = 280;
 const H_GAP = 330;
 
-function layout(nodes: PredictionNode[]) {
+function layout(nodes: PredictionNode[], overrides?: Record<string, number>) {
   const flowNodes: Node[] = [];
   const flowEdges: Edge[] = [];
   let leafCursor = 0;
@@ -157,16 +158,18 @@ function layout(nodes: PredictionNode[]) {
       x = (childrenX[0] + childrenX[childrenX.length - 1]) / 2;
     }
 
+    const data: EventNodeData = {
+      event: node.event,
+      branch_type: node.branch_type,
+      stability_index: overrides?.[node.id] ?? node.stability_index,
+      depth: node.depth,
+    };
+
     flowNodes.push({
       id: node.id,
       type: "event",
       position: { x, y: (node.depth - 1) * V_GAP },
-      data: {
-        event: node.event,
-        branch_type: node.branch_type,
-        stability_index: node.stability_index,
-        depth: node.depth,
-      },
+      data,
     });
 
     for (const child of node.children) {
@@ -202,17 +205,35 @@ export interface GraphMeta {
 }
 
 export function PredictionGraph({
-  nodes,
-  meta,
+  result,
 }: {
-  nodes: PredictionNode[];
-  meta: GraphMeta;
+  result: PredictionResult;
 }) {
+  const nodes = result.graph_nodes;
+  const meta: GraphMeta = {
+    coherence: result.coherence_index,
+    model: result.model_used,
+    contextCount: result.context_used.length,
+    summary: result.summary,
+  };
   const [selected, setSelected] = useState<PredictionNode | null>(null);
   const [showSummary, setShowSummary] = useState(false);
+  const [view, setView] = useState<"graph" | "timeline">("graph");
+  const [overrides, setOverrides] = useState<Record<string, number>>({});
 
-  const { flowNodes, flowEdges } = useMemo(() => layout(nodes), [nodes]);
+  const { flowNodes, flowEdges } = useMemo(() => layout(nodes, overrides), [nodes, overrides]);
   const radiants = countRadiants(nodes);
+
+  function applyOverride(id: string, p: number) {
+    setOverrides((o) => ({ ...o, [id]: Math.max(0, Math.min(1, p)) }));
+  }
+  function resetOverride(id: string) {
+    setOverrides((o) => {
+      const c = { ...o };
+      delete c[id];
+      return c;
+    });
+  }
 
   return (
     <div className="relative h-full w-full">
