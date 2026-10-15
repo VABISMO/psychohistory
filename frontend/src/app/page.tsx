@@ -20,10 +20,13 @@ import { PredictionGraph } from "@/components/prediction-graph";
 import { generatePrediction, fetchModels, type PredictionResult } from "@/lib/api";
 
 const EXAMPLES = [
-  "Spain general election November 2029",
-  "Political corruption and protests in Latin America",
-  "Global energy transition and resource conflicts",
-  "Impact of AI on employment and social cohesion",
+  "US midterm elections 3 November 2026 and the road to 2028",
+  "Russia–Ukraine war stalemate and post-Putin power succession",
+  "China's 21st Party Congress 2027 and the succession question",
+  "Iran's nuclear program after the 2026 US–Israel strikes and regime stability",
+  "Israel's postwar Gaza governance and the future of Netanyahu's coalition",
+  "European far-right surge and EU enlargement with Ukraine",
+  "Spain snap general election 29 November 2026 and the role of Vox",
 ];
 
 export default function Home() {
@@ -112,7 +115,7 @@ export default function Home() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) run();
                 }}
-                placeholder="Describe the scenario to predict (e.g. Spain general election November 2029)...  Cmd/Ctrl+Enter to predict"
+                placeholder="Describe the scenario to predict (e.g. Spain snap general election 29 November 2026)...  Cmd/Ctrl+Enter to predict"
                 className="min-h-[52px] pl-9 pr-3"
               />
             </div>

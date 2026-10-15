@@ -10,7 +10,7 @@ every number grounded in the live web, every probability computed by a transpare
 [![Backend](https://img.shields.io/badge/backend-FastAPI-009688?logo=fastapi&logoColor=white)](#-architecture)
 [![Frontend](https://img.shields.io/badge/frontend-Next.js%2016-000000?logo=next.js&logoColor=white)](#-architecture)
 [![Inference](https://img.shields.io/badge/inference-Ollama%20(local)-FF6F00)](https://ollama.com)
-[![Tests](https://img.shields.io/badge/tests-24%20passing-brightgreen)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-24-brightgreen)](#-testing)
 [![License](https://img.shields.io/badge/license-MIT-blue)](#-license)
 
 </div>
@@ -28,6 +28,7 @@ every number grounded in the live web, every probability computed by a transpare
 - **Local & private** — inference runs on your machine via Ollama; MongoDB falls back to in‑memory `mongomock`.
 - **Hardened backend** — bottleneck serialisation, sliding‑window rate limits, exponential‑backoff retries.
 - **Dynamic model selector** — the UI lists the models actually installed in your Ollama registry.
+- **Production-ready frontend** — optimized static build, all pages prerendered, no dev tooling.
 
 ---
 
@@ -99,30 +100,69 @@ N(D) = Σ_{d=1}^{D} 3^d = (3^(D+1) − 3) / 2
 
 ---
 
+## 📦 Dependencies
+
+**Backend** — Python **3.11+** (tested on 3.13). Installed from `backend/requirements.txt`:
+
+| Package        | Role                                  |
+| -------------- | ------------------------------------- |
+| `fastapi`      | HTTP API                              |
+| `uvicorn`      | ASGI server                           |
+| `httpx`        | async web retrieval (News/Wikipedia)  |
+| `pymongo`      | MongoDB driver                        |
+| `mongomock`    | in‑memory Mongo fallback              |
+| `pydantic`     | data models / validation              |
+| `python-dotenv`| `.env` loading                        |
+| `pytest`       | test runner                           |
+
+**Frontend** — Node.js **20+** (tested on 26). Key packages from `frontend/package.json`:
+
+| Package                    | Role                          |
+| -------------------------- | ----------------------------- |
+| `next` (16) / `react` (19) | framework                     |
+| `@xyflow/react`            | interactive prediction graph  |
+| `tailwindcss` (v4)         | styling                       |
+| `lucide-react`             | icons                         |
+| `@radix-ui/*`              | accessible primitives         |
+
+**Runtime services**
+
+| Service  | Required | Notes                                              |
+| -------- | -------- | -------------------------------------------------- |
+| Ollama   | **yes**  | local LLM inference; pull at least one model       |
+| MongoDB  | no       | optional; falls back to in‑memory `mongomock`      |
+
+---
+
 ## 🚀 Quickstart
 
-### Prerequisites
+### 0. Clone
 
-- **Python 3.11+**
-- **Node.js 20+**
-- **[Ollama](https://ollama.com)** running locally with at least one model pulled:
-  ```bash
-  ollama pull llama3
-  ```
-- *(Optional)* MongoDB — otherwise the in‑memory fallback is used automatically.
+```bash
+git clone https://github.com/VABISMO/psychohistory.git
+cd psychohistory
+```
 
-### 1. Backend
+### 1. Install Ollama and a model
+
+Install [Ollama](https://ollama.com), make sure the daemon is running, then pull a model:
+
+```bash
+ollama pull llama3
+```
+
+### 2. Backend
 
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env          # adjust if needed
+cp .env.example .env               # adjust if needed
 uvicorn psychohistory.main:app --host 0.0.0.0 --port 8000
 ```
 
-### 2. Frontend
+### 3. Frontend
 
 ```bash
 cd frontend
@@ -130,20 +170,66 @@ npm install
 npm run dev -- --port 3000
 ```
 
-### 3. One‑shot launcher
+### 4. One‑shot launchers
 
 ```bash
-./start.sh
+./start.sh          # development (hot reload)
+./start-prod.sh     # production (optimized build, no dev tooling)
 ```
 
-Starts both servers in the background and tails their logs to `.logs/`.
+Both start backend + frontend in the background and log to `.logs/`.
 
-| Service  | URL                     |
-| -------- | ----------------------- |
-| Frontend | http://localhost:3000   |
-| Whitepaper | http://localhost:3000/paper |
-| Backend  | http://localhost:8000   |
-| API docs | http://localhost:8000/docs |
+| Service    | URL                          |
+| ---------- | ---------------------------- |
+| Frontend   | http://localhost:3000        |
+| Whitepaper | http://localhost:3000/paper  |
+| Backend    | http://localhost:8000        |
+| API docs   | http://localhost:8000/docs   |
+
+---
+
+## 🖥️ Usage
+
+1. Open **http://localhost:3000**.
+2. **Write a scenario** in the prompt bar — or click one of the example chips
+   (US midterms, Russia/Ukraine, China 21st Party Congress, Iran, Israel, Europe, Spain 29‑Nov‑2026).
+3. Choose the **Depth** (1–5) — how many generations of future events to project.
+4. Pick a **model** from the dropdown (populated from your local Ollama registry).
+5. Press **Generate prediction** (or `Cmd/Ctrl + Enter`). CPU inference takes a few minutes.
+6. **Explore the graph** — pan/zoom; click any node for its details: probability,
+   magnitude, trend, estimated **date** and **duration**.
+7. Click **Summary** to open the modal with the single most plausible future.
+8. The whitepaper (**`/paper`**) is linked discreetly in the header ("whitepaper").
+
+---
+
+## 🏭 Production
+
+Build once, serve optimized:
+
+```bash
+./start-prod.sh
+```
+
+Or manually:
+
+```bash
+# frontend
+cd frontend
+npm run build
+npm start -- --port 3000      # or: ./node_modules/.bin/next start --port 3000
+
+# backend
+cd backend
+venv/bin/uvicorn psychohistory.main:app --host 0.0.0.0 --port 8000
+```
+
+`npm run build` prerenders both routes as static (`○ /`, `○ /paper`) and runs
+TypeScript checks. In production there is **no developer overlay or dev‑tools
+indicator** at all.
+
+For a hardened backend deployment, put the FastAPI app behind a process manager
+and a reverse proxy, and set `MONGO_URI` to a real MongoDB instance.
 
 ---
 
@@ -161,7 +247,7 @@ Starts both servers in the background and tails their logs to `.logs/`.
 ```bash
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Spain general election November 2029", "depth": 2}'
+  -d '{"prompt": "Spain snap general election 29 November 2026", "depth": 2}'
 ```
 
 ---
@@ -181,12 +267,12 @@ Tuning knobs (in `psychohistory/services/predictor.py`): `PREFERRED_MODELS`, `SE
 
 ## 🧪 Testing
 
+Backend (24 tests — probability math, normalisation, JSON salvage/grouping, tree assembly):
+
 ```bash
 cd backend
-venv/bin/pytest tests/ -v      # 24 passing
+venv/bin/pytest tests/ -v
 ```
-
-Covers the probability math, normalisation helpers, JSON salvage/grouping and tree assembly.
 
 Frontend type‑check and lint:
 
@@ -195,6 +281,19 @@ cd frontend
 npx tsc --noEmit
 npm run lint
 ```
+
+---
+
+## 🛠 Troubleshooting
+
+| Symptom | Fix |
+| ------- | --- |
+| Model dropdown says **"no local models"** | Start Ollama (`ollama serve`) and `ollama pull llama3`. |
+| **Predictions are very slow** | CPU inference (~6–7 tok/s). Use a smaller model and lower depth. |
+| MongoDB not installed | Nothing to do — the backend auto‑falls back to in‑memory `mongomock`. |
+| `Address already in use` | Another process holds port 3000/8000; kill it or change the port. |
+| Stale/odd frontend behaviour in dev | Delete `frontend/.next` and restart. |
+| Dev overlay / issue badge appearing | It is Next's error indicator — it only shows on a real error. Production builds never show it. |
 
 ---
 
@@ -211,7 +310,7 @@ psychohistory/
 │   │       ├── predictor.py     # engine: prompt, salvage parser, math fallback
 │   │       ├── search.py        # News + Wikipedia, constraint discovery
 │   │       └── limiter.py       # Bottleneck, RateLimiter, retries
-│   ├── tests/test_math.py
+│   ├── tests/test_math.py       # 24 tests
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -220,7 +319,9 @@ psychohistory/
 │       ├── app/paper/page.tsx       # whitepaper
 │       ├── components/prediction-graph.tsx
 │       └── lib/api.ts
-├── start.sh
+├── start.sh                     # development launcher
+├── start-prod.sh                # production launcher (build + serve)
+├── ROADMAP.md                   # future development checklist
 └── README.md
 ```
 
@@ -228,7 +329,7 @@ psychohistory/
 
 ## 🧭 Limitations & Ethics
 
-Psychohistory is fiction; this is an **exploratory reasoning aid, not an oracle**. Probabilities are heuristic, reflect modelling choices, and are not measured frequencies. LLM narratives can inherit bias from training data and retrieved sources. Grounding reduces — but cannot eliminate — hallucination. Use outputs to inform human judgement, never to replace it, and never to defame real people.
+Psychohistory is fiction; this is an **exploratory reasoning aid, not an oracle**. Probabilities are heuristic, reflect modelling choices, and are not measured frequencies. LLM narratives can inherit bias from training data and retrieved sources. Grounding reduces — but cannot eliminate — hallucination. Use outputs to inform human judgement, never to replace it, and never to defame real people. See [`ROADMAP.md`](ROADMAP.md) for planned improvements.
 
 ---
 

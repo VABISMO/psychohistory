@@ -9,7 +9,7 @@ mkdir -p "$LOGDIR"
 echo "=== Psychohistory launcher ==="
 
 # --- Backend ---
-pkill -f "uvicorn psychohistory.main" 2>/dev/null || true
+pkill -f "[u]vicorn psychohistory.main" 2>/dev/null || true
 sleep 1
 cd "$ROOT/backend"
 setsid nohup venv/bin/uvicorn psychohistory.main:app \
@@ -18,7 +18,7 @@ setsid nohup venv/bin/uvicorn psychohistory.main:app \
 echo "Backend PID: $!  -> http://localhost:8000"
 
 # --- Frontend ---
-pkill -f "next dev" 2>/dev/null || true
+pkill -f "[n]ext dev" 2>/dev/null || true
 sleep 1
 cd "$ROOT/frontend"
 setsid nohup npm run dev -- --port 3000 \
@@ -28,8 +28,8 @@ echo "Frontend PID: $!  -> http://localhost:3000"
 sleep 6
 echo ""
 echo "--- Backend check ---"
-curl -s http://localhost:8000/ && echo "" || echo "backend aun no responde"
+curl -s --max-time 6 http://localhost:8000/ && echo "" || echo "backend aun no responde"
 echo "--- Frontend check ---"
-curl -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost:3000/ || echo "frontend aun no responde"
+curl -s --max-time 8 -o /dev/null -w "HTTP %{http_code}\n" http://localhost:3000/ || echo "frontend aun no responde"
 echo ""
 echo "Logs en $LOGDIR/"

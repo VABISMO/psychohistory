@@ -415,7 +415,55 @@ export default function PaperPage() {
             </p>
           </Section>
 
-          <Section n="11" title="References">
+          <Section n="11" title="Future Work and Roadmap">
+            <p>
+              The current engine is deliberately minimal and fully transparent. A candid
+              assessment identifies the following as the highest-value next steps, tracked in
+              the project&apos;s <code className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[12px] text-primary">ROADMAP.md</code>:
+            </p>
+            <p>
+              <strong>A real time axis and hazard models.</strong> The core gap is that the
+              mathematics is currently time‑blind. We should attach a continuous time axis and a{" "}
+              <em>hazard rate</em> <span className="font-mono">h(t)</span> per event, so the engine
+              can express &quot;overdue&quot; phenomena: the longer an improbable event fails to
+              occur, the higher its conditional probability becomes. A Weibull hazard
+            </p>
+            <Formula label="11.1">{`h(t) = (k/λ)(t/λ)^(k−1)`}</Formula>
+            <p>
+              with shape <span className="font-mono">k &gt; 1</span> models an increasing hazard
+              (a wearing‑out / renewal process), while <span className="font-mono">k = 1</span>{" "}
+              recovers the memoryless Poisson case and <span className="font-mono">k &lt; 1</span>{" "}
+              the &quot;risk decays with calm&quot; regime. Rare, high‑impact (&quot;black swan&quot;)
+              events should have their impact modelled with fat‑tailed distributions and Extreme
+              Value Theory, with probability and severity treated as separate axes.
+            </p>
+            <ul className="ml-4 list-disc space-y-1.5">
+              <li>
+                <strong>Actors and &quot;heroes&quot;.</strong> Model key individuals and institutions as
+                first‑class entities — power, tenure, ideology — and give them a leader‑departure
+                hazard and an influence weight that can shift a node&apos;s branch probabilities.
+                A single decision by a pivotal actor can redefine the whole trajectory.
+              </li>
+              <li>
+                <strong>Event coupling and cascades.</strong> Replace independent branching with
+                conditioned probabilities <span className="font-mono">P(child | parent)</span> and
+                contagion dynamics (self‑exciting Hawkes processes, SIR‑like diffusion) so events
+                genuinely cause and amplify one another.
+              </li>
+              <li>
+                <strong>Calibration and evaluation.</strong> Add Bayesian priors, Monte Carlo
+                uncertainty intervals, and a backtesting harness scored with Brier score and
+                calibration curves — without which no claim of improvement can be made.
+              </li>
+              <li>
+                <strong>Structured decoding and grounding.</strong> Constrain the LLM with
+                JSON‑schema / grammar decoding, and attach verifiable source citations to every
+                event.
+              </li>
+            </ul>
+          </Section>
+
+          <Section n="12" title="References">
             <ol className="ml-4 list-decimal space-y-1.5 text-[13px] text-muted-foreground">
               <li>I. Asimov, <em>Foundation</em>. Gnome Press, 1951.</li>
               <li>G. Marsaglia, &quot;Evaluating the Normal Distribution,&quot; <em>J. Stat. Soft.</em>, 2004.</li>
