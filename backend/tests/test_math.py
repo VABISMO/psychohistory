@@ -1,4 +1,4 @@
-"""Tests del motor de psicohistoria: matematicas, normalizacion y endpoints."""
+"""Tests for the psychohistory engine: maths, normalisation and endpoints."""
 import math
 import sys
 import os
@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from psychohistory.services.predictor import (
     _compute_probability,
     _build_tree,
+    _apply_coupling,
     _repair_and_load,
     _brace_extract_objects,
     _group_events,
@@ -21,6 +22,7 @@ from psychohistory.services.predictor import (
     _phi,
 )
 from psychohistory.models import Event
+from psychohistory.services import coupling as coupling_math
 
 
 def test_phi_is_valid_cdf():
@@ -95,6 +97,33 @@ def test_coherence_range():
     nodes = _build_tree("test", 3)
     c = _compute_coherence(nodes)
     assert 0.0 <= c <= 1.0
+
+
+def test_apply_coupling_conditions_children():
+    nodes = _build_tree("test", 3)
+
+    pre = {}
+
+    def snap(n):
+        pre[n.id] = n.stability_index
+        for c in n.children:
+            snap(c)
+
+    for r in nodes:
+        snap(r)
+
+    _apply_coupling(nodes)
+
+    def verify(n, post):
+        assert abs(n.stability_index - post) < 1e-9
+        for c in n.children:
+            exp = round(
+                coupling_math.adjust_for_parent(pre[c.id], post, c.branch_type), 4
+            )
+            verify(c, exp)
+
+    for r in nodes:
+        verify(r, pre[r.id])  # roots have no parent and must stay unchanged
 
 
 def test_repair_valid_json():
