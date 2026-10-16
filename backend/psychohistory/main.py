@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from .config_db import coll
 from .services.search import retrieve_context, retrieve_constraints, retrieve_sources
+from .services.datasources import macro_sources, render_facts
 from .services.predictor import generate_prediction_ollama, save_prediction
 from .services.limiter import general_limiter, predict_limiter
 
@@ -111,14 +112,22 @@ async def predict(request: PredictionRequest):
         import asyncio as _asyncio
 
         user_sources = _normalize_user_sources(request.extra_sources)
-        context, constraints, sources = await _asyncio.gather(
+        context, constraints, sources, macro = await _asyncio.gather(
             retrieve_context(request.prompt),
             retrieve_constraints(request.prompt),
             retrieve_sources(request.prompt),
+            macro_sources(request.prompt),
         )
-        # User-provided sources are merged first so they rank as first-class
-        # evidence alongside the freshly retrieved ones.
-        all_sources = user_sources + sources
+        # User-provided sources lead, then macro (World Bank/IMF) records, then
+        # the freshly retrieved ones — all first-class evidence.
+        all_sources = user_sources + macro + sources
+        # Readable excerpts (real article text) handed to the model so it can
+        # name the actors and facts that actually appear in the news.
+        documents = [
+            f"{s.get('title', '')} [{s.get('source', '')}]: {s.get('snippet', '')}".strip()
+            for s in sources
+            if (s.get("snippet") or "").strip()
+        ][:8]
         result = await generate_prediction_ollama(
             prompt=request.prompt,
             depth=depth,
@@ -127,6 +136,8 @@ async def predict(request: PredictionRequest):
             constraints=constraints,
             sources=all_sources,
             user_sources=user_sources,
+            external_facts=render_facts(macro),
+            documents=documents,
         )
         await save_prediction(result)
         return {"status": "success", "data": result.model_dump()}

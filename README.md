@@ -10,7 +10,7 @@ every number grounded in the live web, every probability computed by a transpare
 [![Backend](https://img.shields.io/badge/backend-FastAPI-009688?logo=fastapi&logoColor=white)](#-architecture)
 [![Frontend](https://img.shields.io/badge/frontend-Next.js%2016-000000?logo=next.js&logoColor=white)](#-architecture)
 [![Inference](https://img.shields.io/badge/inference-Ollama%20(local)-FF6F00)](https://ollama.com)
-[![Tests](https://img.shields.io/badge/tests-168-brightgreen)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-221-brightgreen)](#-testing)
 [![License](https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey)](#-license)
 
 </div>
@@ -21,7 +21,8 @@ every number grounded in the live web, every probability computed by a transpare
 ## ✨ Features
 
 - **Branching forecast trees** — depth `D` produces `3^d` nodes per level (`3 → 12 → 39 → 120`), each spawn split into *continuation / optimistic / pessimistic*.
-- **Real web grounding** — live Google News + Wikipedia (ES + EN) retrieval, so events name **real actors**.
+- **Real web grounding** — live news + Wikipedia (ES + EN) retrieval; the **top result pages are actually downloaded and read** (HTML → text), so events name **real actors** taken from the article body.
+- **Broad data providers** — beyond news/Wikipedia: **Wikidata** entities, **GDELT** global news, **World Bank** + **IMF** macro figures and **PredictIt** market/election odds, plus optional **ACLED** conflict events.
 - **No impossible numbers** — institutional maxima (e.g. a chamber's **350 seats**) are fetched online and injected as hard caps. *Nothing is hardcoded.*
 - **Transparent mathematics** — probabilities from a normal‑CDF model with trend, radiant and depth‑decay modulation.
 - **Hazard‑aware time** — Weibull hazard rates, renewal processes and Hawkes self‑exciting clustering make "the longer it is overdue, the likelier it becomes" explicit.
@@ -45,19 +46,21 @@ every number grounded in the live web, every probability computed by a transpare
 
 ```
 ┌──────────────────────────┐        ┌───────────────────────────────────────────┐
-│        Frontend          │  HTTP  │                 Backend (FastAPI)          │
-│  Next.js + React Flow    │ ─────► │  /predict   /models   /predictions         │
-│  prompt · depth · model  │        │                                            │
-│  interactive graph+modal │        │   retrieve_context ─┐  live web (News+Wiki) │
-└──────────────────────────┘        │   retrieve_constraints┘  ES + EN           │
-                                    │            │                               │
-                                    │            ▼                               │
-                                    │   single constrained LLM call (Ollama)     │
-                                    │            │                               │
-                                    │   salvage-parse → assemble tree → math     │
-                                    │            │                               │
-                                    │            ▼                               │
-                                    │   MongoDB  (or in-memory mongomock)        │
+│        Frontend          │  HTTP  │                 Backend (FastAPI)         │
+│  Next.js + React Flow    │ ─────► │  /predict   /models   /predictions        │
+│  prompt · depth · model  │        │                                           │
+│  interactive graph+modal │        │  retrieve: News · Wiki · Wikidata · GDELT │
+└──────────────────────────┘        │            World Bank · IMF · PredictIt   │
+                                    │            ACLED (optional)               │
+                                    │                                           │
+                                    │                 │                         │
+                                    │                 ▼                         │
+                                    │  single constrained LLM call (Ollama)     │
+                                    │                 │                         │
+                                    │  salvage-parse → assemble tree → math     │
+                                    │                 │                         │
+                                    │                 ▼                         │
+                                    │  MongoDB  (or in-memory mongomock)        │
                                     └───────────────────────────────────────────┘
 ```
 
@@ -271,13 +274,15 @@ Configuration is read from `backend/.env`:
 | `MONGO_URI`   | `mongodb://mongo:27017/`    | Mongo connection; falls back to `mongomock`   |
 | `OLLAMA_HOST` | `http://localhost:11434`    | Ollama endpoint                               |
 
+Optional data providers (all keyless by default): set `ACLED_API_KEY` + `ACLED_EMAIL` to enable ACLED conflict events; set `PSYCHO_DATASOURCES=0` to disable the extra providers (Wikidata, GDELT, World Bank, IMF, PredictIt).
+
 Tuning knobs (in `psychohistory/services/predictor.py`): `PREFERRED_MODELS`, `SEMANTIC_MAX_DEPTH`, sampling options and token caps.
 
 ---
 
 ## 🧪 Testing
 
-Backend (**168 tests** — probability math, hazard/renewal, actors, coupling, uncertainty, grounding, evaluation, JSON salvage/grouping, tree assembly):
+Backend (**221 tests** — probability math, hazard/renewal, actors, coupling, uncertainty, grounding, evaluation, JSON salvage/grouping, tree assembly, data sources):
 
 The backend tests are dependency‑free stdlib runners (no pytest needed), run exactly as CI does:
 
@@ -325,6 +330,8 @@ psychohistory/
 │   │   └── services/
 │   │       ├── predictor.py     # engine: prompt, salvage parser, math fallback
 │   │       ├── search.py        # News + Wikipedia, constraint discovery
+│   │       ├── web.py           # Bing search + page fetching/HTML→text
+│   │       ├── datasources.py   # Wikidata, GDELT, World Bank, IMF, PredictIt, ACLED
 │   │       ├── temporal.py      # time axis, Weibull hazard, renewal, Hawkes
 │   │       ├── actors.py        # actors, leader-departure hazard, coalitions
 │   │       ├── coupling.py      # conditioned branching, noisy-OR/AND, diffusion
@@ -334,7 +341,7 @@ psychohistory/
 │   │       ├── schema.py        # JSON-schema output contract
 │   │       └── limiter.py       # Bottleneck, RateLimiter, retries
 │   ├── evaluation/              # backtesting harness, metrics, scoreboard, dataset
-│   ├── tests/                   # 168 tests across 11 stdlib suites
+│   ├── tests/                   # 221 tests across 15 stdlib suites
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
