@@ -17,7 +17,12 @@ import { Textarea } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import { PredictionGraph } from "@/components/prediction-graph";
-import { generatePrediction, fetchModels, type PredictionResult } from "@/lib/api";
+import {
+  generatePrediction,
+  fetchModels,
+  fetchPrediction,
+  type PredictionResult,
+} from "@/lib/api";
 
 const EXAMPLES = [
   "US midterm elections 3 November 2026 and the road to 2028",
@@ -50,6 +55,24 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("p");
+    if (!id) return;
+    let active = true;
+    fetchPrediction(id)
+      .then((r) => {
+        if (active) setResult(r);
+      })
+      .catch((e) => {
+        if (!active) return;
+        setError(e instanceof Error ? e.message : "Prediction not found");
+        setResult(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   async function run() {
     if (!prompt.trim() || loading) return;
     setLoading(true);
@@ -57,6 +80,7 @@ export default function Home() {
     try {
       const res = await generatePrediction(prompt, depth, model || undefined);
       setResult(res);
+      window.history.replaceState(null, "", `?p=${res.prediction_id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
