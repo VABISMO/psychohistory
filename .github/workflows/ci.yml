@@ -44,6 +44,10 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Generate route types
+        working-directory: frontend
+        run: npx next typegen
+
       - name: Typecheck
         working-directory: frontend
         run: npx tsc --noEmit
