@@ -65,8 +65,17 @@ export default function Home() {
       })
       .catch((e) => {
         if (!active) return;
-        setError(e instanceof Error ? e.message : "Prediction not found");
+        const msg = e instanceof Error ? e.message : "Prediction not found";
+        setError(
+          /not found/i.test(msg)
+            ? "This shared prediction is no longer available."
+            : msg
+        );
         setResult(null);
+        // Drop the dead id so reloads and hot-reloads stop retrying it.
+        if (/not found/i.test(msg)) {
+          window.history.replaceState(null, "", window.location.pathname);
+        }
       });
     return () => {
       active = false;
