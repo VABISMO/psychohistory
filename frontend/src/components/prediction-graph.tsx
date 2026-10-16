@@ -386,65 +386,101 @@ export function PredictionGraph({
         </button>
       </div>
 
-      {/* Detail panel */}
+      {/* Detail panel — right-side inspector drawer */}
       {selected && (
-        <div className="absolute bottom-4 right-4 w-96 rounded-xl border border-border bg-card/95 p-4 shadow-2xl backdrop-blur-md">
-          <div className="flex items-start justify-between gap-3">
-            <h3 className="pr-2 text-sm font-semibold leading-snug">{selected.event.name}</h3>
+        <aside
+          role="dialog"
+          aria-label={`Details for ${selected.event.name}`}
+          className="panel-slide-in absolute right-4 top-4 bottom-4 z-30 flex w-[26rem] max-w-[calc(100%-2rem)] flex-col overflow-hidden rounded-xl border border-border bg-card/95 shadow-2xl backdrop-blur-md"
+        >
+          <div
+            className="h-1 w-full shrink-0"
+            style={{
+              background: `linear-gradient(90deg, ${
+                BRANCH_COLORS[selected.branch_type] || "#8b5cf6"
+              }, transparent)`,
+            }}
+          />
+          <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="size-2 rounded-full"
+                  style={{ background: BRANCH_COLORS[selected.branch_type] || "#8b5cf6" }}
+                />
+                <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  D{selected.depth} · {selected.branch_type}
+                </span>
+                {selected.event.radiant && (
+                  <span className="flex items-center gap-1 text-[10px] text-yellow-300">
+                    <Sparkles className="size-3" /> radiant
+                  </span>
+                )}
+              </div>
+              <h3 className="mt-1 text-sm font-semibold leading-snug text-foreground">
+                {selected.event.name}
+              </h3>
+            </div>
             <button
               onClick={() => setSelected(null)}
-              className="text-muted-foreground transition hover:text-foreground"
+              aria-label="Close details"
+              className="-mr-1 shrink-0 rounded-md p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
             >
               <X className="size-4" />
             </button>
           </div>
-          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            {selected.event.description}
-          </p>
-          <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
-            <Info label="Probability" value={`${(selected.event.probability * 100).toFixed(1)}%`} />
-            <Info label="Magnitude" value={selected.event.magnitude.toFixed(2)} />
-            <Info label="Date" value={selected.event.date || String(selected.event.year)} />
-            <Info label="Trend" value={selected.event.trend} />
-            <Info label="Duration" value={selected.event.duration || "—"} />
-            <Info label="Radiant" value={selected.event.radiant ? "yes" : "no"} />
-            <Info
-              label="Stability"
-              value={(overrides[selected.id] ?? selected.stability_index).toFixed(3)}
-            />
-            {selected.event.probability_ci && selected.event.probability_ci.length === 2 && (
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {selected.event.description}
+            </p>
+            <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
+              <Info label="Probability" value={`${(selected.event.probability * 100).toFixed(1)}%`} />
+              <Info label="Magnitude" value={selected.event.magnitude.toFixed(2)} />
+              <Info label="Date" value={selected.event.date || String(selected.event.year)} />
+              <Info label="Trend" value={selected.event.trend} />
+              <Info label="Duration" value={selected.event.duration || "—"} />
+              <Info label="Radiant" value={selected.event.radiant ? "yes" : "no"} />
               <Info
-                label="90% CI"
-                value={`${(selected.event.probability_ci[0] * 100).toFixed(0)}–${(selected.event.probability_ci[1] * 100).toFixed(0)}%`}
+                label="Stability"
+                value={(overrides[selected.id] ?? selected.stability_index).toFixed(3)}
               />
+              {selected.event.probability_ci && selected.event.probability_ci.length === 2 && (
+                <Info
+                  label="90% CI"
+                  value={`${(selected.event.probability_ci[0] * 100).toFixed(0)}–${(selected.event.probability_ci[1] * 100).toFixed(0)}%`}
+                />
+              )}
+            </dl>
+
+            <StabilityOverride
+              value={overrides[selected.id]}
+              base={selected.stability_index}
+              overridden={overrides[selected.id] != null}
+              onChange={(v) => applyOverride(selected.id, v)}
+              onReset={() => resetOverride(selected.id)}
+            />
+
+            <Explainability
+              event={selected.event}
+              branch={selected.branch_type}
+              base={selected.stability_index}
+              override={overrides[selected.id]}
+            />
+
+            {selected.event.actors && selected.event.actors.length > 0 && (
+              <ActorDetails actors={selected.event.actors} />
             )}
-          </dl>
 
-          <StabilityOverride
-            value={overrides[selected.id]}
-            base={selected.stability_index}
-            overridden={overrides[selected.id] != null}
-            onChange={(v) => applyOverride(selected.id, v)}
-            onReset={() => resetOverride(selected.id)}
-          />
+            {selected.event.temporal && <TemporalDetails t={selected.event.temporal} />}
 
-          <Explainability
-            event={selected.event}
-            branch={selected.branch_type}
-            base={selected.stability_index}
-            override={overrides[selected.id]}
-          />
+            {selected.event.citations && selected.event.citations.length > 0 && (
+              <CitationDetails citations={selected.event.citations} />
+            )}
 
-          {selected.event.actors && selected.event.actors.length > 0 && (
-            <ActorDetails actors={selected.event.actors} />
-          )}
-
-          {selected.event.temporal && <TemporalDetails t={selected.event.temporal} />}
-
-          {selected.event.citations && selected.event.citations.length > 0 && (
-            <CitationDetails citations={selected.event.citations} />
-          )}
-        </div>
+            <div className="h-1" />
+          </div>
+        </aside>
       )}
 
       {/* Global summary modal */}
