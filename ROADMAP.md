@@ -100,19 +100,25 @@ with *increasing* baseline hazard (a renewal / wearing‑out process).
 ### E. Grounding & data — **P1**
 
 - [x] Per-event **citations** (source URL + snippet) surfaced in the UI. *(`grounding.py` attribution + `Citation` model + Sources panel)*
-- [ ] Add sources: **GDELT**, **ACLED**, **Wikidata**, polling aggregators, IMF/World Bank,
-      election databases, market/odds data. *(still Google News + Wikipedia only)*
+- [x] Add sources: **GDELT**, **ACLED**, **Wikidata**, polling aggregators, IMF/World Bank,
+      election databases, market/odds data. *(Wikidata entities, GDELT global news (best-effort),
+      World Bank + IMF macro figures, PredictIt market/odds & election markets in `datasources.py`;
+      ACLED conflict events behind optional `ACLED_API_KEY`/`ACLED_EMAIL`. Polling aggregators and
+      generic election databases expose no keyless API — partly covered by Wikidata + PredictIt.)*
+- [x] **Read the top result pages** (RAG over real news): Bing News/Web search → publisher URL →
+      fetch → HTML→text, excerpts passed to the model as SOURCE DOCUMENTS. *(`web.py`
+      `parse_bing_rss`/`fetch_page`/`extract_readable`; top 5 pages read in `search.retrieve_sources`)*
 - [x] Structured **numeric constraint store** (chambers, budgets, populations, records) with
       automatic validation of every number the LLM emits. *(`constraints.py`, enforced on each event)*
 - [x] Temporal grounding: resolve "next election", "in N years" to real ISO dates. *(relative refs → ISO dates in `grounding.py`)*
 - [ ] Fact verification / contradiction detection across sources.
 - [x] Caching & provenance for retrieved evidence. *(provenance via citations with URL + `retrieved_at`; response caching still pending)*
-- [ ] **Sources modal**: show *all* sources consulted for a prediction — a single panel with
+- [x] **Sources modal**: show *all* sources consulted for a prediction — a single panel with
       every retrieved document / citation, its snippet, URL and retrieval time, so the user can
-      audit exactly what the forecast was built from. *(today only a small Sources panel is shown)*
-- [ ] **Add your own sources**: let the user append their own documents, URLs or notes before
+      audit exactly what the forecast was built from. *("Sources (N)" button + modal in `prediction-graph.tsx`)*
+- [x] **Add your own sources**: let the user append their own documents, URLs or notes before
       running a prediction, so the query has *all* the information they hold for that calculation.
-      These become first-class evidence in grounding and citations.
+      These become first-class evidence in grounding and citations. *(`extra_sources` → `source="USER"` citations)*
 
 ### F. LLM & inference — **P1**
 
@@ -130,6 +136,11 @@ with *increasing* baseline hazard (a renewal / wearing‑out process).
 - [ ] Scenario **comparison** and **what-if** (perturb a node, re-run that branch).
 - [x] **Export**: JSON + shareable permalinks to a prediction. *(PDF/PNG pending; JSON download + copy link + `GET /predictions/{id}`)*
 - [x] **Explainability panel**: show the math contributions and cited evidence per node. *(branch, stability, override, citations presence; temporal/actors/citations already present)*
+- [x] **Readable nodes at every depth**: the LLM only writes levels 1-2, so deeper nodes are
+      templated from the parent's topic + a real actor with a concrete description; names are
+      guaranteed unique across the tree and no node is left showing a bare actor name with no
+      explanation of what happens. *(`_synthetic_event`/`_polish_event` + `_TOPIC_NAMES`/`_TOPIC_DESCS`
+      in `predictor.py`; empty/duplicate/bare-name LLM events are repaired on assembly)*
 - [x] Editable nodes with manual probability overrides. *(stability override slider in detail panel; applied client-side)*
 - [ ] Internationalisation (the app is English-only today).
 - [ ] Saved scenarios, history, user accounts.

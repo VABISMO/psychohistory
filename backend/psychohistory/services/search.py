@@ -6,6 +6,12 @@ from urllib.parse import quote, quote_plus
 
 import httpx
 
+from . import datasources
+from . import web
+
+# How many of the top-ranked source pages to actually download and read.
+READ_PAGES = 5
+
 CURATED_SOURCES = [
     "World Bank - World Development Indicators (Gini, GDP, governance)",
     "Freedom House - Freedom in the World Report (freedom indices)",
@@ -164,25 +170,42 @@ def _dedupe_sources(items: List[dict]) -> List[dict]:
     return out
 
 
-async def retrieve_sources(prompt: str, max_results: int = 12) -> List[dict]:
+async def retrieve_sources(prompt: str, max_results: int = 16) -> List[dict]:
     """Retrieve structured evidence sources (title, url, snippet, source).
 
     Same live sources as :func:`retrieve_context` but returned as records so the
     API can surface per-event citations (ROADMAP section E). Deduped by URL.
     """
-    news_items, wiki_es_items, wiki_en_items = await asyncio.gather(
+    news_items, wiki_es_items, wiki_en_items, external_items, bing_news_items, bing_web_items = await asyncio.gather(
         _google_news_items(prompt),
         _wikipedia_items(prompt, limit=3, lang="es"),
         _wikipedia_items(prompt, limit=3, lang="en"),
+        datasources.external_sources(prompt),
+        web.bing_news(prompt, limit=6),
+        web.bing_web(prompt, limit=6),
     )
-    items = _dedupe_sources(news_items + wiki_es_items + wiki_en_items)
-    # Rank by keyword overlap with the scenario and keep the top results.
+    items = _dedupe_sources(
+        bing_news_items + bing_web_items + news_items
+        + wiki_es_items + wiki_en_items + external_items
+    )
+    # Rank by keyword overlap with the scenario, then actually open the top
+    # pages and replace their snippets with the readable article text.
     qwords = set(_keywords(prompt))
     items.sort(
         key=lambda it: len(qwords & set(_keywords(it.get("title", "") + " " + it.get("snippet", "")))),
         reverse=True,
     )
-    print(f"[SEARCH] Retrieved {len(items)} structured sources")
+    pages = await web.read_pages(items, limit=READ_PAGES)
+    read_by_url = {(p["url"] or "").rstrip("/").lower(): p for p in pages}
+    for it in items:
+        page = read_by_url.get((it.get("url") or "").rstrip("/").lower())
+        if not page:
+            continue
+        if page.get("title"):
+            it["title"] = page["title"][:200]
+        if page.get("text"):
+            it["snippet"] = page["text"][:600]
+    print(f"[SEARCH] Retrieved {len(items)} structured sources ({len(pages)} pages read)")
     return items[:max_results]
 
 

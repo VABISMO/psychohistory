@@ -215,65 +215,410 @@ def _attach_grounding(event: Event) -> Event:
     return event
 
 
-BRANCH_EN = {
-    "same": "continuation of the current trend",
-    "max": "high-probability (optimistic) scenario",
-    "min": "low-probability (pessimistic) scenario",
+# ---------------------------------------------------------------------------
+# Synthetic events: content for the nodes the LLM does not write.
+#
+# The LLM only writes levels 1..SEMANTIC_MAX_DEPTH. Every deeper node used to
+# be built by gluing strings together ("Housing Reform Failure — SAME (D3) —
+# MAX (D4)" plus a "Follow-on from ..." sentence), so a depth-4 tree showed the
+# same handful of names over and over, most of them without a description of
+# what actually happens. These templates instead write a headline and a real
+# sentence around the parent's topic and a real actor, and every name is
+# checked for uniqueness across the whole tree.
+# ---------------------------------------------------------------------------
+
+_NEUTRAL_ACTOR = "the incumbent"
+
+_MONTHS = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+]
+
+# Headlines used when a node has no inherited topic (roots and repairs).
+_ROOT_NAMES = {
+    "same": [
+        "Holding course: {actor}",
+        "{actor} keeps the situation stable",
+        "{actor} muddles through",
+        "No break in the status quo with {actor}",
+        "{actor} manages the fallout without changing course",
+        "Stalemate around {actor}",
+    ],
+    "max": [
+        "Breakthrough for {actor}",
+        "{actor} turns the situation around",
+        "{actor} lands the key deal",
+        "The odds shift in {actor}'s favour",
+        "{actor} emerges strengthened",
+        "A clear win for {actor}",
+    ],
+    "min": [
+        "Setback for {actor}",
+        "{actor} loses control",
+        "{actor} is overwhelmed by the backlash",
+        "The situation spirals against {actor}",
+        "{actor} is pushed aside",
+        "Pressure brings {actor} down",
+    ],
 }
 
-TREND_EN = {
-    "rising": "rising",
-    "stable": "stable",
-    "declining": "declining",
-    "volatile": "volatile",
+_ROOT_DESCS = {
+    "same": [
+        'Driven by "{scenario}", the situation holds: pressure on {actor} keeps the '
+        "outcome unresolved into {date}.",
+        'Driven by "{scenario}", {actor} keeps things stable but unchanged, and the '
+        "consequences only surface by {date}.",
+        'Driven by "{scenario}", nothing structural changes around {actor} before {date}.',
+    ],
+    "max": [
+        'Driven by "{scenario}", {actor} converts the moment into a durable gain, '
+        "visible by {date}.",
+        'Driven by "{scenario}", the balance shifts towards {actor} and the improvement '
+        "holds into {date}.",
+        'Driven by "{scenario}", {actor} lands the decisive breakthrough that changes '
+        "the outlook by {date}.",
+    ],
+    "min": [
+        'Driven by "{scenario}", {actor} faces the sharpest backlash as the situation '
+        "deteriorates by {date}.",
+        'Driven by "{scenario}", things break down around {actor}, with the worst of '
+        "the fallout by {date}.",
+        'Driven by "{scenario}", {actor} is left isolated and the damage lasts into {date}.',
+    ],
 }
 
+# Headlines for nodes that inherit a topic from their LLM-written ancestor.
+_TOPIC_NAMES = {
+    "same": [
+        "{actor} at the centre of the {topic} deadlock",
+        "No breakthrough: {topic} drags on with {actor}",
+        "Holding the line: {actor} on the {topic}",
+        "{Topic} drifts on as {actor} avoids a break",
+        "{actor} absorbs the pressure on the {topic}",
+        "Stalemate on the {topic} with {actor} in charge",
+    ],
+    "max": [
+        "Breakthrough: {actor} resolves the {topic}",
+        "{actor} turns the {topic} around",
+        "{Topic} ends in {actor}'s favour",
+        "{actor} lands the deal that settles the {topic}",
+        "{Topic} resolved as {actor} delivers",
+        "The {topic} breaks in {actor}'s favour",
+    ],
+    "min": [
+        "{actor} loses control of the {topic}",
+        "Crisis: the {topic} spirals beyond {actor}",
+        "{actor} is overwhelmed by the {topic}",
+        "The {topic} collapses while {actor} fails to respond",
+        "Backlash against {actor} over the {topic}",
+        "{actor} runs out of options on the {topic}",
+    ],
+}
 
-def _generate_event(prompt: str, depth: int, parent_event: Optional[str] = None, branch: str = "same") -> Event:
-    trends = ["rising", "stable", "declining", "volatile"]
-    trend = random.choice(trends)
-    magnitude = round(random.uniform(0.2, 0.95), 3)
-    radiant = magnitude > 0.75 and trend in ("rising", "stable")
-    year = 2026 + depth + random.randint(0, depth * 2)
-    branch_en = BRANCH_EN.get(branch, branch)
+_TOPIC_DESCS = {
+    "same": [
+        "The {topic} continues without a decisive break: pressure on {actor} keeps the "
+        "outcome unresolved into {date}.",
+        "{actor} patches the immediate problems of the {topic}, but nothing structural "
+        "changes before {date}.",
+        "The status quo holds around {actor}, and the real consequences of the {topic} "
+        "surface by {date}.",
+    ],
+    "max": [
+        "In the optimistic branch {actor} breaks the {topic} deadlock, locking in the "
+        "gain by {date}.",
+        "{actor} lands a deal that settles the {topic}, with the benefits clearly "
+        "visible by {date}.",
+        "The {topic} resolves in {actor}'s favour and the improvement holds into {date}.",
+    ],
+    "min": [
+        "In the pessimistic branch the {topic} deteriorates as pressure on {actor} "
+        "grows by {date}.",
+        "{actor} fails to contain the {topic}, and the worst of the fallout hits by {date}.",
+        "The {topic} spirals into open conflict around {date}, leaving {actor} isolated.",
+    ],
+}
 
-    if parent_event:
-        name = f"{parent_event} — {branch.upper()} (D{depth})"
-        description = (
-            f"Follow-on from \"{parent_event}\": {branch_en}. "
-            f"Trend {TREND_EN.get(trend, trend)}, estimated impact {magnitude:.2f} around {year}."
-        )
+# Capitalised runs of up to three words — candidate real-world names.
+_NAME_SEQ_RE = re.compile(
+    r"\b([A-ZÁÉÍÓÚÑ][\w'’áéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][\w'’áéíóúñ]+){0,2})\b"
+)
+
+# News/sentence vocabulary that must never be mistaken for an actor.
+_NAME_STOP = {
+    "The", "A", "An", "In", "On", "At", "After", "Before", "During", "What",
+    "When", "How", "Why", "Who", "If", "By", "For", "From", "With", "And",
+    "But", "New", "This", "That", "Its", "His", "Her", "Their", "Our",
+    "Last", "First", "Most", "More", "Over", "Under", "Says", "Said",
+    "Report", "News", "World", "National", "International", "Government",
+    "Prime", "Minister", "President", "Housing", "Crisis", "Protest",
+    "Protests", "Election", "Elections", "General", "Party", "Bill", "Law",
+    "Court", "Senate", "Congress", "January", "February", "March", "April",
+    "June", "July", "August", "September", "October", "November", "December",
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+}
+
+# A bare person's/party's name used as a headline: exactly two capitalised
+# words (e.g. "Pedro Sánchez") or a name the model itself listed as an actor.
+_PERSON_NAME_RE = re.compile(
+    r"^[A-ZÁÉÍÓÚÑ][\w'’áéíóúñ]+\s+[A-ZÁÉÍÓÚÑ][\w'’áéíóúñ]+$"
+)
+
+
+def _norm_name(name: str) -> str:
+    return re.sub(r"\W+", " ", (name or "").lower()).strip()
+
+
+def _scenario_clause(prompt: str) -> str:
+    """First line/sentence of the scenario, used when there is no topic."""
+    text = re.split(r"[.!?\n]", (prompt or "").strip())[0].strip()
+    return text[:160] or "the scenario"
+
+
+def _clean_topic(name: str, max_words: int = 6) -> str:
+    """Strip chain suffixes ("X — SAME (D3) — MAX (D4)") down to a topic."""
+    core = re.split(r"\s+—\s+", (name or "").strip())[0]
+    core = re.sub(r"\s*\(D\d+\)", "", core)
+    words = core.split()
+    return " ".join(words[:max_words]).strip(" ,;:.-") or core.strip()[:60]
+
+
+def _child_topic(inherited_topic: str, event_name: str) -> str:
+    """Topic for the children of an untouched LLM event.
+
+    The LLM headline is a real situation phrase, so it is the most specific
+    topic available; templated nodes instead hand their own topic straight
+    down (never their headline) so "X — SAME (D3) — MAX (D4)" chains cannot
+    form.
+    """
+    return _clean_topic(event_name) or inherited_topic
+
+
+def _extract_names(texts: List[str], min_hits: int = 2) -> List[str]:
+    """Real-world names that recur in the texts, most frequent first."""
+    counts: dict = {}
+    for text in texts or []:
+        for m in _NAME_SEQ_RE.finditer(text or ""):
+            seq = m.group(1).strip()
+            first = seq.split()[0]
+            if first in _NAME_STOP:
+                continue
+            if len(seq.split()) == 1 and len(seq) < 5:
+                continue
+            counts[seq] = counts.get(seq, 0) + 1
+    return [n for n, c in sorted(counts.items(), key=lambda kv: -kv[1]) if c >= min_hits]
+
+
+def _actor_object(name: str) -> Actor:
+    role = "leader" if len(name.split()) >= 2 else "institution"
+    return Actor(name=name[:120], role=role, influence=round(random.uniform(0.4, 0.8), 2))
+
+
+def _actor_pool(events, documents: Optional[List[str]] = None, prompt: str = "") -> List[str]:
+    """Real actor names available to synthetic nodes, best sources first."""
+    out: List[str] = []
+    seen: set = set()
+
+    def add(name: str) -> None:
+        name = (name or "").strip()
+        if not 2 <= len(name) <= 60:
+            return
+        key = name.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(name)
+
+    for ev in events or []:
+        for a in getattr(ev, "actors", None) or []:
+            add(a.name)
+    if documents:
+        for n in _extract_names(documents[:8], min_hits=2):
+            add(n)
+    if len(out) < 3:
+        for n in _extract_names([prompt], min_hits=1):
+            add(n)
+    return out[:12]
+
+
+def _synthetic_event(
+    prompt: str,
+    level: int,
+    branch: str,
+    topic: str = "",
+    pool: Optional[List[str]] = None,
+    seen: Optional[set] = None,
+) -> Event:
+    """A templated event with a real headline and a real description.
+
+    ``seen`` accumulates normalised names so no two nodes in the tree repeat.
+    """
+    branch = branch if branch in _TOPIC_NAMES else "same"
+    use_topic = bool(topic)
+    names = _TOPIC_NAMES[branch] if use_topic else _ROOT_NAMES[branch]
+    descs = _TOPIC_DESCS[branch] if use_topic else _ROOT_DESCS[branch]
+    actors = [a for a in (pool or []) if a] or [_NEUTRAL_ACTOR]
+    scenario = _scenario_clause(prompt)
+
+    tl = _clean_topic(topic).lower()
+    if tl.startswith("the "):
+        tl = tl[4:]
+    Tl = tl[:1].upper() + tl[1:] if tl else ""
+
+    start = len(seen) if seen is not None else random.randint(0, 10 ** 6)
+    year = EPOCH_YEAR + level + random.randint(0, max(1, level * 2))
+    date = f"{random.choice(_MONTHS)} {year}"
+
+    def fmt(actor: str) -> dict:
+        return {
+            "actor": actor,
+            "topic": tl,
+            "Topic": Tl,
+            "date": date,
+            "year": year,
+            "scenario": scenario,
+        }
+
+    name = desc = actor_name = None
+    for k in range(len(names) * len(actors)):
+        ni = (start + k) // len(actors) % len(names)
+        ai = (start + k) % len(actors)
+        candidate = names[ni].format(**fmt(actors[ai])).strip()[:110].strip()
+        if seen is None or _norm_name(candidate) not in seen:
+            name = candidate
+            desc = descs[ni % len(descs)].format(**fmt(actors[ai])).strip()[:600]
+            actor_name = actors[ai]
+            break
+
+    if name is None:  # every combination taken: add a distinguishing marker
+        ni = start % len(names)
+        ai = start % len(actors)
+        base = names[ni].format(**fmt(actors[ai])).strip()[:88].strip()
+        name = f"{base} ({year})"
+        marker = 1
+        while seen is not None and _norm_name(name) in seen:
+            marker += 1
+            name = f"{base} ({year} #{marker})"
+        desc = descs[ni % len(descs)].format(**fmt(actors[ai])).strip()[:600]
+        actor_name = actors[ai]
+
+    if seen is not None:
+        seen.add(_norm_name(name))
+
+    if branch == "max":
+        trend = "rising"
+        magnitude = round(random.uniform(0.55, 0.95), 3)
+    elif branch == "min":
+        trend = random.choice(["declining", "volatile"])
+        magnitude = round(random.uniform(0.35, 0.85), 3)
     else:
-        name = f"Root prediction: {prompt[:60]}"
-        description = (
-            f"Root scenario for \"{prompt[:80]}\": {branch_en}. "
-            f"Trend {TREND_EN.get(trend, trend)}, magnitude {magnitude:.2f}, horizon {year}."
-        )
+        trend = random.choice(["stable", "rising", "declining", "volatile"])
+        magnitude = round(random.uniform(0.30, 0.75), 3)
 
     ev = Event(
         name=name,
-        description=description,
-        probability=round(magnitude * 0.8, 4),
+        description=desc,
+        probability=round(min(0.95, magnitude * 0.85), 4),
         magnitude=magnitude,
         trend=trend,
-        radiant=radiant,
+        radiant=magnitude > 0.75 and trend in ("rising", "stable"),
         year=year,
-        date=f"{year}",
-        duration="months",
+        date=date,
+        duration=random.choice(["3 months", "6 months", "1 year", "2 years"]),
+        actors=[_actor_object(actor_name)] if ACTORS_ENABLED and actor_name else [],
     )
     _attach_temporal(ev)
     _attach_uncertainty(ev)
     return ev
 
 
-def _build_tree(prompt: str, depth: int, parent_id: str = "", parent_event: str = "", current_depth: int = 0) -> List[PredictionNode]:
+def _polish_event(
+    event: Event,
+    branch: str,
+    topic: str,
+    pool: List[str],
+    prompt: str,
+    seen: set,
+    level: int,
+) -> Tuple[Event, str]:
+    """Fix LLM events that are unusable: empty description, a bare person's
+    name as the headline, or a headline already used by another node.
+
+    Returns ``(event, child_topic)`` — what the node's children should use as
+    their topic (its own headline when it is a real situation phrase, otherwise
+    the topic the node itself was built from).
+    """
+    name = (event.name or "").strip()
+    desc = (event.description or "").strip()
+    pool_set = {a.lower() for a in pool}
+    bare = bool(name) and (
+        name.lower() in pool_set or bool(_PERSON_NAME_RE.match(name))
+    )
+    duplicate = bool(name) and _norm_name(name) in seen
+
+    if desc and not bare and not duplicate:
+        seen.add(_norm_name(name))
+        return event, _child_topic(topic, name)
+
+    actor = ""
+    if bare:
+        actor = next((p for p in pool if p.lower() == name.lower()), "") or name
+    if not actor and event.actors:
+        actor = event.actors[0].name
+    if not actor:
+        actor = pool[len(seen) % len(pool)] if pool else _NEUTRAL_ACTOR
+
+    seed_topic = (topic or "") if bare else (_clean_topic(name) or topic)
+    synth = _synthetic_event(
+        prompt, level, branch, seed_topic,
+        pool=[actor] if actor else pool, seen=seen,
+    )
+
+    event.name = synth.name
+    if not desc:
+        event.description = synth.description
+        event.date = synth.date or event.date
+    if not event.actors and synth.actors:
+        event.actors = synth.actors
+    return event, seed_topic
+
+
+def _generate_event(
+    prompt: str,
+    depth: int,
+    parent_event: Optional[str] = None,
+    branch: str = "same",
+    pool: Optional[List[str]] = None,
+    seen: Optional[set] = None,
+) -> Event:
+    """Template event; ``parent_event`` is the inherited topic, not a headline."""
+    return _synthetic_event(prompt, depth, branch, topic=parent_event or "", pool=pool, seen=seen)
+
+
+def _build_tree(
+    prompt: str,
+    depth: int,
+    parent_id: str = "",
+    parent_event: str = "",
+    current_depth: int = 0,
+    seen: Optional[set] = None,
+    pool: Optional[List[str]] = None,
+) -> List[PredictionNode]:
     if current_depth >= depth:
         return []
+
+    if seen is None:
+        seen = set()
+    if pool is None:
+        pool = _extract_names([prompt], min_hits=1)[:6]
 
     nodes = []
     for branch_type in ["same", "max", "min"]:
         node_id = str(uuid.uuid4())[:8]
-        event = _generate_event(prompt, current_depth + 1, parent_event or None, branch_type)
+        event = _generate_event(
+            prompt, current_depth + 1, parent_event or None, branch_type,
+            pool=pool, seen=seen,
+        )
         s_p, _, _ = _compute_probability(event.magnitude, event.trend, event.radiant, current_depth)
 
         node = PredictionNode(
@@ -285,7 +630,8 @@ def _build_tree(prompt: str, depth: int, parent_id: str = "", parent_event: str 
             stability_index=s_p,
             children=[],
         )
-        node.children = _build_tree(prompt, depth, node_id, event.name, current_depth + 1)
+        # synthetic nodes pass their topic straight down — never their headline
+        node.children = _build_tree(prompt, depth, node_id, parent_event, current_depth + 1, seen, pool)
         nodes.append(node)
 
     return nodes
@@ -702,6 +1048,8 @@ async def _llm_flat_tree(
     model: str,
     constraints: Optional[List[str]] = None,
     user_sources: Optional[List[dict]] = None,
+    external_facts: Optional[List[str]] = None,
+    documents: Optional[List[str]] = None,
 ) -> Tuple[dict, str]:
     """Build the semantic tree with a single LLM call.
 
@@ -723,6 +1071,12 @@ async def _llm_flat_tree(
 
     user_lines = _user_source_lines(user_sources)
     user_block = "\n".join(f"- {c}" for c in user_lines) if user_lines else "(none provided)"
+
+    data_lines = [c.strip()[:200] for c in (external_facts or [])[:6] if c and c.strip()]
+    data_block = "\n".join(f"- {c}" for c in data_lines) if data_lines else "(none available)"
+
+    doc_lines = [c.strip()[:600] for c in (documents or [])[:6] if c and c.strip()]
+    doc_block = "\n".join(f"- {c}" for c in doc_lines) if doc_lines else "(none available)"
 
     n1 = 3 ** 1
     n2 = 3 ** 2
@@ -771,7 +1125,20 @@ async def _llm_flat_tree(
         "countries, institutions, companies, unions — adapted to the scenario.\n"
         "- The user may supply their own sources for this scenario. Treat them as "
         "AUTHORITATIVE, first-class evidence and prefer them over generic knowledge.\n"
+        "- Use the EXTERNAL DATA figures (population, GDP, inflation, market odds) "
+        "when relevant to the scenario, and never contradict them.\n"
+        "- The SOURCE DOCUMENTS are the readable text of real web pages fetched "
+        "for this scenario: mine them for the REAL named actors (people, parties, "
+        "institutions, companies) and the concrete facts, and use those names.\n"
         + actors_rule +
+        "- The \"name\" is a short headline of WHAT HAPPENS (max 10 words). NEVER put a "
+        "bare person's, party's or country's name in \"name\" — name the event instead "
+        "(use \"Snap election called for 29 Nov\", not \"Pedro Sánchez\").\n"
+        "- Every event MUST have a non-empty \"description\" of 12-18 words saying "
+        "concretely what happens, to whom and with what consequence. "
+        "\"description\": \"\" is a failure.\n"
+        "- Do not repeat a headline or a lead actor across events: each node must be a "
+        "distinct scenario with a distinct angle.\n"
         "- Each description must say what concretely happens: who wins, who loses, "
         "what decision is taken, and the consequence. NO generic filler.\n"
         "- \"date\": approximate month/year it occurs (e.g. \"Nov 2029\").\n"
@@ -800,6 +1167,10 @@ async def _llm_flat_tree(
         f"Depth: {semantic_depth} levels.\n\n"
         f"SOURCES PROVIDED BY THE USER — treat as authoritative evidence for this "
         f"scenario and prefer them over generic knowledge:\n{user_block}\n\n"
+        f"EXTERNAL DATA (World Bank / IMF / prediction markets) — real figures, "
+        f"use them when relevant:\n{data_block}\n\n"
+        f"SOURCE DOCUMENTS (read from live web pages for this scenario — real news "
+        f"text; take actors and facts from these):\n{doc_block}\n\n"
         f"Real retrieved context (current news/data):\n{context_str}\n\n"
         f"REAL-WORLD LIMITS, TOTALS AND RECORDS fetched from the web — OBEY AS HARD CAPS:\n"
         f"{limits_block}\n\n"
@@ -895,32 +1266,52 @@ def _event_to_node(event: Event, level: int, parent_id: Optional[str], branch_ty
     )
 
 
-def _assemble_tree(flat: dict, depth: int, prompt: str) -> List[PredictionNode]:
-    """Assemble the tree from per-level events, filling gaps with math."""
+def _assemble_tree(
+    flat: dict,
+    depth: int,
+    prompt: str,
+    documents: Optional[List[str]] = None,
+) -> List[PredictionNode]:
+    """Assemble the tree from per-level events, filling gaps with templates.
+
+    LLM events are repaired on the way in (empty description, a bare person's
+    name used as the headline, duplicate headlines) so no node is left with a
+    name and nothing to say about it.
+    """
     branch_types = ["same", "max", "min"]
+    pool = _actor_pool(
+        [ev for lvl in flat.values() for ev in lvl], documents, prompt
+    )
+    seen: set = set()
     prev: List[PredictionNode] = []
+    topics: List[str] = []
     roots: List[PredictionNode] = []
 
     for level in range(1, depth + 1):
         expected = 3 ** level
         events = list(flat.get(level, []))
         cur: List[PredictionNode] = []
+        cur_topics: List[str] = []
         for i in range(expected):
             branch = branch_types[i % 3]
             parent = prev[i // 3] if prev else None
+            topic = topics[i // 3] if prev else ""
             if i < len(events):
-                event = events[i]
-            else:
-                event = _generate_event(
-                    prompt, level, parent.event.name if parent else None, branch
+                event, child_topic = _polish_event(
+                    events[i], branch, topic, pool, prompt, seen, level
                 )
+            else:
+                event = _synthetic_event(prompt, level, branch, topic, pool, seen)
+                child_topic = topic
             node = _event_to_node(event, level, parent.id if parent else None, branch)
             if parent:
                 parent.children.append(node)
             cur.append(node)
+            cur_topics.append(child_topic)
         if level == 1:
             roots = cur
         prev = cur
+        topics = cur_topics
 
     return roots
 
@@ -933,6 +1324,8 @@ async def generate_prediction_ollama(
     constraints: Optional[List[str]] = None,
     sources: Optional[List[dict]] = None,
     user_sources: Optional[List[dict]] = None,
+    external_facts: Optional[List[str]] = None,
+    documents: Optional[List[str]] = None,
 ) -> PredictionResult:
     """Try to generate a prediction via Ollama. Fall back to the math model on failure."""
     try:
@@ -945,9 +1338,10 @@ async def generate_prediction_ollama(
         print(f"[PREDICT] Using Ollama model: {model} (available: {models})")
 
         flat, summary = await _llm_flat_tree(
-            prompt, depth, context, model, constraints, user_sources
+            prompt, depth, context, model, constraints, user_sources,
+            external_facts, documents,
         )
-        graph_nodes = _assemble_tree(flat, depth, prompt)
+        graph_nodes = _assemble_tree(flat, depth, prompt, documents)
         _apply_coupling(graph_nodes)
         _apply_actor_influence(graph_nodes)
         _attach_citations(graph_nodes, sources)
