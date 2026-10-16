@@ -99,6 +99,14 @@ body {
   animation: pulse-radiant 2s ease-in-out infinite;
 }
 
+@keyframes panel-slide-in {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.panel-slide-in {
+  animation: panel-slide-in 0.18s ease-out;
+}
+
 .react-flow__attribution { display: none; }
 .react-flow__background { background: transparent; }
 
