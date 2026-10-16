@@ -13,7 +13,7 @@ import {
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Sparkles, TrendingUp, TrendingDown, Minus, Activity, X, BookOpen, Users, Link2, Calendar, GitBranch, Download } from "lucide-react";
+import { Sparkles, TrendingUp, TrendingDown, Minus, Activity, X, BookOpen, Users, Link2, Calendar, GitBranch, Download, Library } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { PredictionNode, PsychEvent, TemporalInfo, Actor, Citation, PredictionResult } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
@@ -218,9 +218,11 @@ export function PredictionGraph({
   };
   const [selected, setSelected] = useState<PredictionNode | null>(null);
   const [showSummary, setShowSummary] = useState(false);
+  const [showSources, setShowSources] = useState(false);
   const [view, setView] = useState<"graph" | "timeline">("graph");
   const [overrides, setOverrides] = useState<Record<string, number>>({});
   const [copied, setCopied] = useState(false);
+  const allSources = result.sources ?? [];
 
   // Deep links: ?view=timeline and ?node=<id> from a shared permalink.
   useEffect(() => {
@@ -334,6 +336,15 @@ export function PredictionGraph({
         >
           <Link2 className="size-3.5" /> {copied ? "Copied" : "Share"}
         </button>
+        <span className="mx-1 h-5 w-px bg-border" />
+        <button
+          onClick={() => setShowSources(true)}
+          title="All consulted sources"
+          className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:text-foreground"
+        >
+          <Library className="size-3.5" /> Sources
+          {allSources.length > 0 ? ` (${allSources.length})` : ""}
+        </button>
       </div>
 
       {/* Leyenda */}
@@ -375,7 +386,7 @@ export function PredictionGraph({
             {radiants} radiants
           </Badge>
           <Badge variant="outline" className="font-mono">
-            {meta.contextCount} sources
+            {allSources.length} sources
           </Badge>
         </div>
         <button
@@ -510,6 +521,80 @@ export function PredictionGraph({
             <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
               {meta.summary}
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* All consulted sources modal */}
+      {showSources && (
+        <div
+          className="absolute inset-0 z-40 flex items-center justify-center bg-background/70 p-6 backdrop-blur-sm"
+          onClick={() => setShowSources(false)}
+        >
+          <div
+            className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-card/95 p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-1 flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2 text-primary">
+                <Library className="size-5" />
+                <h2 className="text-lg font-semibold text-foreground">Consulted sources</h2>
+              </div>
+              <button
+                onClick={() => setShowSources(false)}
+                aria-label="Close sources"
+                className="-mr-1 rounded-md p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+            <p className="mb-4 text-xs text-muted-foreground">
+              {allSources.length > 0
+                ? `${allSources.length} source${allSources.length === 1 ? "" : "s"} were consulted for this prediction — the live web search plus any you provided.`
+                : "No external sources were retrieved for this prediction."}
+            </p>
+            {allSources.length > 0 && (
+              <ul className="space-y-2">
+                {allSources.map((c, i) => (
+                  <li key={i} className="rounded-lg border border-border bg-background/50 px-3 py-2">
+                    <div className="flex items-start justify-between gap-3">
+                      {c.url ? (
+                        <a
+                          href={c.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium text-primary underline-offset-2 hover:underline"
+                        >
+                          {c.title}
+                        </a>
+                      ) : (
+                        <span className="text-sm font-medium text-foreground">{c.title}</span>
+                      )}
+                      {c.source && (
+                        <span
+                          className={cn(
+                            "shrink-0 rounded-full px-2 py-0.5 font-mono text-[10px]",
+                            c.source === "USER"
+                              ? "bg-primary/15 text-primary"
+                              : "bg-secondary text-muted-foreground"
+                          )}
+                        >
+                          {c.source}
+                        </span>
+                      )}
+                    </div>
+                    {c.snippet && (
+                      <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{c.snippet}</p>
+                    )}
+                    {c.retrieved_at && (
+                      <p className="mt-1 font-mono text-[10px] text-muted-foreground/70">
+                        retrieved {c.retrieved_at}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       )}

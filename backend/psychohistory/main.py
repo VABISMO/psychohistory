@@ -1,7 +1,9 @@
+from typing import List
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from .config_db import coll
 from .services.search import retrieve_context, retrieve_constraints, retrieve_sources
 from .services.predictor import generate_prediction_ollama, save_prediction
@@ -41,10 +43,43 @@ async def rate_limit_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+class UserSourceInput(BaseModel):
+    """A source supplied by the user for a single prediction (ROADMAP section E)."""
+    title: str = ""
+    url: str = ""
+    text: str = ""
+
+
 class PredictionRequest(BaseModel):
     prompt: str
     prediction_depth: int = 3
     model: str = "llama3"
+    extra_sources: List[UserSourceInput] = Field(default_factory=list)
+
+
+def _normalize_user_sources(items: List[UserSourceInput]) -> List[dict]:
+    """Turn user-supplied sources into the citation records used downstream.
+
+    Each becomes a first-class citation tagged ``source="USER"`` so it flows into
+    grounding, per-event attribution and the global sources list exactly like a
+    retrieved source.
+    """
+    out: List[dict] = []
+    for s in items:
+        title = (s.title or "").strip()
+        url = (s.url or "").strip()
+        text = (s.text or "").strip()
+        if not (title or url or text):
+            continue
+        if not title:
+            title = (url or text)[:80]
+        out.append({
+            "title": title[:200],
+            "url": url[:500],
+            "snippet": text[:300],
+            "source": "USER",
+        })
+    return out[:20]
 
 
 @app.get("/")
@@ -75,18 +110,23 @@ async def predict(request: PredictionRequest):
     try:
         import asyncio as _asyncio
 
+        user_sources = _normalize_user_sources(request.extra_sources)
         context, constraints, sources = await _asyncio.gather(
             retrieve_context(request.prompt),
             retrieve_constraints(request.prompt),
             retrieve_sources(request.prompt),
         )
+        # User-provided sources are merged first so they rank as first-class
+        # evidence alongside the freshly retrieved ones.
+        all_sources = user_sources + sources
         result = await generate_prediction_ollama(
             prompt=request.prompt,
             depth=depth,
             context=context,
             model=request.model,
             constraints=constraints,
-            sources=sources,
+            sources=all_sources,
+            user_sources=user_sources,
         )
         await save_prediction(result)
         return {"status": "success", "data": result.model_dump()}

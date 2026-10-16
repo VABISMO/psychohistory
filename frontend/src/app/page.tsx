@@ -11,9 +11,12 @@ import {
   Cpu,
   AlertCircle,
   Search,
+  Plus,
+  X,
+  Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/input";
+import { Input, Textarea } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import { PredictionGraph } from "@/components/prediction-graph";
@@ -22,6 +25,7 @@ import {
   fetchModels,
   fetchPrediction,
   type PredictionResult,
+  type UserSource,
 } from "@/lib/api";
 
 const EXAMPLES = [
@@ -43,6 +47,8 @@ export default function Home() {
   const [models, setModels] = useState<string[]>([]);
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [model, setModel] = useState<string>("");
+  const [sources, setSources] = useState<UserSource[]>([]);
+  const [showSources, setShowSources] = useState(false);
 
   useEffect(() => {
     fetchModels()
@@ -87,7 +93,7 @@ export default function Home() {
     setLoading(true);
     setError(null);
     try {
-      const res = await generatePrediction(prompt, depth, model || undefined);
+      const res = await generatePrediction(prompt, depth, model || undefined, sources);
       setResult(res);
       window.history.replaceState(null, "", `?p=${res.prediction_id}`);
     } catch (e) {
@@ -191,6 +197,20 @@ export default function Home() {
                 </select>
               </div>
 
+              <button
+                onClick={() => setShowSources(true)}
+                className="flex items-center gap-2 rounded-lg border border-border bg-background/50 px-3 py-2 text-sm transition hover:bg-secondary"
+                title="Add your own sources for this prediction"
+              >
+                <Link2 className="size-4 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Sources</span>
+                {sources.length > 0 && (
+                  <span className="flex size-4 items-center justify-center rounded-full bg-primary/20 font-mono text-[10px] font-bold text-primary">
+                    {sources.length}
+                  </span>
+                )}
+              </button>
+
               <Button onClick={run} disabled={loading || !prompt.trim()} size="lg">
                 {loading ? (
                   <>
@@ -233,6 +253,128 @@ export default function Home() {
           <EmptyState loading={loading} />
         )}
       </main>
+
+      {showSources && (
+        <SourcesEditor
+          sources={sources}
+          onChange={setSources}
+          onClose={() => setShowSources(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function SourcesEditor({
+  sources,
+  onChange,
+  onClose,
+}: {
+  sources: UserSource[];
+  onChange: (s: UserSource[]) => void;
+  onClose: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [url, setUrl] = useState("");
+  const [text, setText] = useState("");
+
+  const canAdd = Boolean(title.trim() || url.trim() || text.trim());
+
+  function add() {
+    if (!canAdd) return;
+    onChange([...sources, { title: title.trim(), url: url.trim(), text: text.trim() }]);
+    setTitle("");
+    setUrl("");
+    setText("");
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 p-6 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-border bg-card/95 p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-primary">
+              <Link2 className="size-5" />
+              <h2 className="text-lg font-semibold text-foreground">Add your own sources</h2>
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              Attach links, documents or notes you already have. They are treated as
+              authoritative evidence for the prediction, alongside the live web search.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="-mr-1 shrink-0 rounded-md p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+
+        <div className="space-y-2">
+          <Input
+            placeholder="Title (optional)"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+          <Input
+            placeholder="URL (optional)"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+          />
+          <Textarea
+            placeholder="Notes or excerpt (optional)"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            className="min-h-[70px]"
+          />
+          <div className="flex justify-end">
+            <Button onClick={add} disabled={!canAdd} size="sm">
+              <Plus className="size-4" /> Add source
+            </Button>
+          </div>
+        </div>
+
+        {sources.length > 0 ? (
+          <ul className="mt-4 space-y-1.5">
+            {sources.map((s, i) => (
+              <li
+                key={i}
+                className="flex items-start justify-between gap-2 rounded-md border border-border bg-background/50 px-2.5 py-2 text-xs"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-foreground">
+                    {s.title || s.url || s.text.slice(0, 60)}
+                  </p>
+                  {s.url && (
+                    <p className="truncate font-mono text-[10px] text-muted-foreground">{s.url}</p>
+                  )}
+                  {s.text && (
+                    <p className="mt-0.5 line-clamp-2 text-[10px] text-muted-foreground">{s.text}</p>
+                  )}
+                </div>
+                <button
+                  onClick={() => onChange(sources.filter((_, j) => j !== i))}
+                  aria-label="Remove source"
+                  className="shrink-0 rounded-md p-1 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-4 text-center text-[11px] text-muted-foreground">
+            No sources added yet. They will be sent with the next prediction.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

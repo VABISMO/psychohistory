@@ -411,6 +411,21 @@ def _citations_from(sources: Optional[List[dict]]) -> List[Citation]:
         return []
 
 
+def _user_source_lines(user_sources: Optional[List[dict]], limit: int = 8) -> List[str]:
+    """Render user-provided sources as compact evidence lines (ROADMAP section E)."""
+    lines: List[str] = []
+    for s in (user_sources or [])[:limit]:
+        title = (s.get("title") or "").strip()
+        text = (s.get("snippet") or s.get("text") or "").strip()
+        url = (s.get("url") or "").strip()
+        head = title or url
+        if text:
+            head = f"{head} — {text}" if head else text
+        if head:
+            lines.append(head[:240])
+    return lines
+
+
 def generate_prediction_fallback(prompt: str, depth: int, context: List[str], sources: Optional[List[dict]] = None) -> PredictionResult:
     """Generate a prediction locally with the mathematical model (no Ollama)."""
     print("[PREDICT] Generating prediction with local mathematical model")
@@ -686,6 +701,7 @@ async def _llm_flat_tree(
     context: List[str],
     model: str,
     constraints: Optional[List[str]] = None,
+    user_sources: Optional[List[dict]] = None,
 ) -> Tuple[dict, str]:
     """Build the semantic tree with a single LLM call.
 
@@ -704,6 +720,9 @@ async def _llm_flat_tree(
             "absolute number (seats, votes, share). Use relative or clearly-approximate "
             "language instead of inventing a figure."
         )
+
+    user_lines = _user_source_lines(user_sources)
+    user_block = "\n".join(f"- {c}" for c in user_lines) if user_lines else "(none provided)"
 
     n1 = 3 ** 1
     n2 = 3 ** 2
@@ -750,6 +769,8 @@ async def _llm_flat_tree(
         "- Write everything in ENGLISH.\n"
         "- Name REAL, verifiable actors: political parties, leaders, governments, "
         "countries, institutions, companies, unions — adapted to the scenario.\n"
+        "- The user may supply their own sources for this scenario. Treat them as "
+        "AUTHORITATIVE, first-class evidence and prefer them over generic knowledge.\n"
         + actors_rule +
         "- Each description must say what concretely happens: who wins, who loses, "
         "what decision is taken, and the consequence. NO generic filler.\n"
@@ -777,6 +798,8 @@ async def _llm_flat_tree(
     user_msg = (
         f"Scenario to project: {prompt}\n"
         f"Depth: {semantic_depth} levels.\n\n"
+        f"SOURCES PROVIDED BY THE USER — treat as authoritative evidence for this "
+        f"scenario and prefer them over generic knowledge:\n{user_block}\n\n"
         f"Real retrieved context (current news/data):\n{context_str}\n\n"
         f"REAL-WORLD LIMITS, TOTALS AND RECORDS fetched from the web — OBEY AS HARD CAPS:\n"
         f"{limits_block}\n\n"
@@ -909,6 +932,7 @@ async def generate_prediction_ollama(
     model: str = DEFAULT_MODEL,
     constraints: Optional[List[str]] = None,
     sources: Optional[List[dict]] = None,
+    user_sources: Optional[List[dict]] = None,
 ) -> PredictionResult:
     """Try to generate a prediction via Ollama. Fall back to the math model on failure."""
     try:
@@ -920,7 +944,9 @@ async def generate_prediction_ollama(
         model = model if model in models else _pick_model(models)
         print(f"[PREDICT] Using Ollama model: {model} (available: {models})")
 
-        flat, summary = await _llm_flat_tree(prompt, depth, context, model, constraints)
+        flat, summary = await _llm_flat_tree(
+            prompt, depth, context, model, constraints, user_sources
+        )
         graph_nodes = _assemble_tree(flat, depth, prompt)
         _apply_coupling(graph_nodes)
         _apply_actor_influence(graph_nodes)
