@@ -10,8 +10,8 @@ every number grounded in the live web, every probability computed by a transpare
 [![Backend](https://img.shields.io/badge/backend-FastAPI-009688?logo=fastapi&logoColor=white)](#-architecture)
 [![Frontend](https://img.shields.io/badge/frontend-Next.js%2016-000000?logo=next.js&logoColor=white)](#-architecture)
 [![Inference](https://img.shields.io/badge/inference-Ollama%20(local)-FF6F00)](https://ollama.com)
-[![Tests](https://img.shields.io/badge/tests-24-brightgreen)](#-testing)
-[![License](https://img.shields.io/badge/license-MIT-blue)](#-license)
+[![Tests](https://img.shields.io/badge/tests-168-brightgreen)](#-testing)
+[![License](https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey)](#-license)
 
 </div>
 
@@ -24,8 +24,16 @@ every number grounded in the live web, every probability computed by a transpare
 - **Real web grounding** — live Google News + Wikipedia (ES + EN) retrieval, so events name **real actors**.
 - **No impossible numbers** — institutional maxima (e.g. a chamber's **350 seats**) are fetched online and injected as hard caps. *Nothing is hardcoded.*
 - **Transparent mathematics** — probabilities from a normal‑CDF model with trend, radiant and depth‑decay modulation.
+- **Hazard‑aware time** — Weibull hazard rates, renewal processes and Hawkes self‑exciting clustering make "the longer it is overdue, the likelier it becomes" explicit.
+- **Actors modelled first‑class** — leaders, parties and institutions carry power/tenure attributes, a leader‑departure hazard and a great‑man influence weight; coalitions are solved with a Banzhaf index.
+- **Coupled events** — branching uses conditioned `P(child|parent)` with dependency graphs, noisy‑OR/AND contagion and SIR‑style diffusion instead of independent gambles.
+- **Uncertainty, not point estimates** — Bayesian priors, Monte Carlo propagation with 90 % credible intervals, ensembles and sensitivity analysis.
+- **Evaluated, not asserted** — a backtesting harness scoring Brier score, log loss, calibration curves and lead‑time accuracy against a labelled event dataset.
 - **Resilient by design** — a brace‑aware JSON *salvage* parser recovers complete events even from truncated LLM output; missing slots are back‑filled mathematically so a forecast is **always** returned.
+- **Per‑event citations & numeric constraints** — every event carries its source URL, snippet and retrieval time, and every number is validated against real‑world caps fetched from the web.
 - **Global summary modal** — one paragraph for the single most plausible trajectory.
+- **Timeline, permalink & export** — chronological view alongside the graph, deep links (`?p=`/`?node=`), JSON export and a copy‑permalinks control.
+- **Explainability panel** — per‑node branch contributions, stability index, manual probability overrides and cited evidence.
 - **Local & private** — inference runs on your machine via Ollama; MongoDB falls back to in‑memory `mongomock`.
 - **Hardened backend** — bottleneck serialisation, sliding‑window rate limits, exponential‑backoff retries.
 - **Dynamic model selector** — the UI lists the models actually installed in your Ollama registry.
@@ -236,12 +244,13 @@ and a reverse proxy, and set `MONGO_URI` to a real MongoDB instance.
 
 ## 🔌 API
 
-| Method | Endpoint       | Description                                            |
-| ------ | -------------- | ------------------------------------------------------ |
-| `POST` | `/predict`     | Generate a forecast tree. Body: `prompt`, `depth`, `model?` |
-| `GET`  | `/models`      | List installed Ollama models, best‑first + `default`   |
-| `GET`  | `/predictions` | Recent persisted predictions                           |
-| `GET`  | `/`            | Health check                                           |
+| Method | Endpoint            | Description                                            |
+| ------ | ------------------- | ------------------------------------------------------ |
+| `POST` | `/predict`          | Generate a forecast tree. Body: `prompt`, `depth`, `model?` |
+| `GET`  | `/models`           | List installed Ollama models, best‑first + `default`   |
+| `GET`  | `/predictions`      | Recent persisted predictions (summaries)               |
+| `GET`  | `/predictions/{id}` | Fetch one full prediction by id (permalink deep link)  |
+| `GET`  | `/`                 | Health check                                           |
 
 **Example**
 
@@ -268,12 +277,16 @@ Tuning knobs (in `psychohistory/services/predictor.py`): `PREFERRED_MODELS`, `SE
 
 ## 🧪 Testing
 
-Backend (24 tests — probability math, normalisation, JSON salvage/grouping, tree assembly):
+Backend (**168 tests** — probability math, hazard/renewal, actors, coupling, uncertainty, grounding, evaluation, JSON salvage/grouping, tree assembly):
+
+The backend tests are dependency‑free stdlib runners (no pytest needed), run exactly as CI does:
 
 ```bash
 cd backend
-venv/bin/pytest tests/ -v
+for f in tests/test_*.py; do venv/bin/python "$f"; done
 ```
+
+`pytest tests/ -v` also works if you have pytest installed.
 
 Frontend type‑check and lint:
 
@@ -282,6 +295,8 @@ cd frontend
 npx tsc --noEmit
 npm run lint
 ```
+
+Both run automatically on every pull request via [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ---
 
@@ -305,13 +320,21 @@ psychohistory/
 ├── backend/
 │   ├── psychohistory/
 │   │   ├── main.py              # FastAPI app, routes, rate-limit middleware
-│   │   ├── models.py            # Pydantic models (Event, Node, Result)
-│   │   ├── config_db.py         # Mongo with mongomock fallback
+│   │   ├── models.py            # Pydantic models (Actor, Citation, Event, PredictionNode, PredictionResult, TemporalInfo)
+│   │   ├── config_db.py         # Mongo with mongomock + file-store fallback
 │   │   └── services/
 │   │       ├── predictor.py     # engine: prompt, salvage parser, math fallback
 │   │       ├── search.py        # News + Wikipedia, constraint discovery
+│   │       ├── temporal.py      # time axis, Weibull hazard, renewal, Hawkes
+│   │       ├── actors.py        # actors, leader-departure hazard, coalitions
+│   │       ├── coupling.py      # conditioned branching, noisy-OR/AND, diffusion
+│   │       ├── uncertainty.py   # Bayesian priors, Monte Carlo, ensembles, HMM
+│   │       ├── grounding.py     # citations, source provenance, date resolution
+│   │       ├── constraints.py   # numeric constraint store + validation
+│   │       ├── schema.py        # JSON-schema output contract
 │   │       └── limiter.py       # Bottleneck, RateLimiter, retries
-│   ├── tests/test_math.py       # 24 tests
+│   ├── evaluation/              # backtesting harness, metrics, scoreboard, dataset
+│   ├── tests/                   # 168 tests across 11 stdlib suites
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -328,14 +351,8 @@ psychohistory/
 
 ---
 
-## 🧭 Limitations & Ethics
-
-Psychohistory is fiction; this is an **exploratory reasoning aid, not an oracle**. Probabilities are heuristic, reflect modelling choices, and are not measured frequencies. LLM narratives can inherit bias from training data and retrieved sources. Grounding reduces — but cannot eliminate — hallucination. Use outputs to inform human judgement, never to replace it, and never to defame real people. See [`ROADMAP.md`](ROADMAP.md) for planned improvements.
-
----
-
 ## 📜 License
 
-Released under the **MIT License**. See `LICENSE`.
+Released under the **Creative Commons Attribution-NonCommercial 4.0 International License (CC BY-NC 4.0)** — free to share and adapt for non‑commercial purposes, with attribution. Commercial use is not permitted. See [`LICENSE`](LICENSE).
 
 <div align="center"><sub>Generated locally · deterministically documented.</sub></div>
