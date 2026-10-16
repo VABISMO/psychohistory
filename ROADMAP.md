@@ -152,7 +152,6 @@ with *increasing* baseline hazard (a renewal / wearing‑out process).
 
 - [ ] Bias audits across regions/actors; document known failure modes.
 - [ ] Guardrails against defamation and harmful content; human-in-the-loop for sensitive use.
-- [ ] Clear, prominent disclaimers that output is speculative.
 - [ ] Data provenance and licensing compliance for all retrieved sources.
 
 ---
