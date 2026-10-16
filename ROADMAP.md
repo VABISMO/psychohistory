@@ -107,6 +107,12 @@ with *increasing* baseline hazard (a renewal / wearing‑out process).
 - [x] Temporal grounding: resolve "next election", "in N years" to real ISO dates. *(relative refs → ISO dates in `grounding.py`)*
 - [ ] Fact verification / contradiction detection across sources.
 - [x] Caching & provenance for retrieved evidence. *(provenance via citations with URL + `retrieved_at`; response caching still pending)*
+- [ ] **Sources modal**: show *all* sources consulted for a prediction — a single panel with
+      every retrieved document / citation, its snippet, URL and retrieval time, so the user can
+      audit exactly what the forecast was built from. *(today only a small Sources panel is shown)*
+- [ ] **Add your own sources**: let the user append their own documents, URLs or notes before
+      running a prediction, so the query has *all* the information they hold for that calculation.
+      These become first-class evidence in grounding and citations.
 
 ### F. LLM & inference — **P1**
 
@@ -131,7 +137,7 @@ with *increasing* baseline hazard (a renewal / wearing‑out process).
 
 ### H. Engineering & quality — **P1**
 
-- [ ] **CI** (GitHub Actions): run backend pytest + frontend tsc/lint/build on every push.
+- [x] **CI** (GitHub Actions): run backend tests + frontend tsc/lint/build on every pull request. *(`.github/workflows/ci.yml`, single `tests` job)*
 - [ ] Frontend + integration + end‑to‑end tests (currently only backend math is tested).
 - [ ] Pre-commit hooks (ruff/black, eslint/prettier).
 - [ ] Structured logging + observability; request tracing.
@@ -148,11 +154,22 @@ with *increasing* baseline hazard (a renewal / wearing‑out process).
 - [x] Maintain a labelled dataset of resolved events for regression testing. *(30 events)*
 - [x] Report a scoreboard per model/prompt version. *(`evaluation/scoreboard.py`)*
 
-### J. Ethics & safety — **P1**
+### K. Documentation & whitepaper — **P2**
 
-- [ ] Bias audits across regions/actors; document known failure modes.
-- [ ] Guardrails against defamation and harmful content; human-in-the-loop for sensitive use.
-- [ ] Data provenance and licensing compliance for all retrieved sources.
+- [ ] **Update the whitepaper** (`/paper`) so it reflects what is *actually implemented*.
+      Its §11 "Future Work" still describes as future work several things that have since
+      landed: hazard/Weibull time model, actors, event coupling, Bayesian/Monte-Carlo
+      uncertainty, evaluation/backtesting, JSON-schema decoding and per-event citations.
+      New sections are needed for the time axis, actors, coupling, uncertainty, evaluation,
+      grounding, plus the product features (timeline, permalink, export, explainability).
+      The §10 "Limitations and Ethics" disclaimer should be removed (no-disclaimers policy).
+- [ ] **Rewrite the whitepaper references** — §12 currently has only 5 weak, mostly placeholder
+      entries. Cite the real literature behind the model: renewal/Weibull & hazard functions,
+      Hawkes self-exciting processes, Extreme Value Theory, Markov/HMMs, Brier/calibration
+      scoring, JSON-schema constrained decoding, RAG and the cited data APIs.
+- [ ] Periodically **re-sync `README.md`** with the code: features, endpoints, dependency/runtime
+      table, test counts, project structure and license. *(first pass done: test count, license,
+      endpoints, features and structure updated)*
 
 ---
 
@@ -162,7 +179,7 @@ with *increasing* baseline hazard (a renewal / wearing‑out process).
 2. **C + B** (coupling + actors) — turns a tree into a causal, agentic model.
 3. **F** (structured decoding + ensemble) — reliability and quality.
 4. **E + G** (richer grounding + UX/explainability) — trust and usability.
-5. **H + J** — hardening and responsibility.
+5. **H** — hardening and quality.
 
 ---
 
