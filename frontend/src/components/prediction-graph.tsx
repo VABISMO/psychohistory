@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -220,6 +220,22 @@ export function PredictionGraph({
   const [showSummary, setShowSummary] = useState(false);
   const [view, setView] = useState<"graph" | "timeline">("graph");
   const [overrides, setOverrides] = useState<Record<string, number>>({});
+  const [copied, setCopied] = useState(false);
+
+  // Deep links: ?view=timeline and ?node=<id> from a shared permalink.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("view") === "timeline") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setView("timeline");
+    }
+    const nodeId = params.get("node");
+    if (nodeId) {
+      const n = findNode(nodes, nodeId);
+      if (n) setSelected(n);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const { flowNodes, flowEdges } = useMemo(() => layout(nodes, overrides), [nodes, overrides]);
   const radiants = countRadiants(nodes);
@@ -235,24 +251,90 @@ export function PredictionGraph({
     });
   }
 
+  function exportJson() {
+    const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `psychohistory-${result.prediction_id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function copyLink() {
+    const params = new URLSearchParams();
+    params.set("p", result.prediction_id);
+    if (view === "timeline") params.set("view", "timeline");
+    if (selected) params.set("node", selected.id);
+    const link = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
+
   return (
     <div className="relative h-full w-full">
-      <ReactFlow
-        nodes={flowNodes}
-        edges={flowEdges}
-        nodeTypes={nodeTypes}
-        fitView
-        minZoom={0.1}
-        nodesDraggable
-        onNodeClick={(_, n) => setSelected(findNode(nodes, n.id))}
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background color="#334155" gap={28} size={1.5} />
-        <Controls
-          showInteractive={false}
-          className="!bottom-4 !left-4 !flex !flex-row !overflow-hidden !rounded-lg !border !border-border !bg-card/95 !shadow-xl [&_button]:!h-9 [&_button]:!w-9 [&_button]:!border-border [&_button]:!bg-card [&_button]:!text-foreground [&_button:hover]:!bg-secondary [&_button_svg]:!fill-foreground"
-        />
-      </ReactFlow>
+      {view === "graph" ? (
+        <ReactFlow
+          nodes={flowNodes}
+          edges={flowEdges}
+          nodeTypes={nodeTypes}
+          fitView
+          minZoom={0.1}
+          nodesDraggable
+          onNodeClick={(_, n) => setSelected(findNode(nodes, n.id))}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background color="#334155" gap={28} size={1.5} />
+          <Controls
+            showInteractive={false}
+            className="!bottom-4 !left-4 !flex !flex-row !overflow-hidden !rounded-lg !border !border-border !bg-card/95 !shadow-xl [&_button]:!h-9 [&_button]:!w-9 [&_button]:!border-border [&_button]:!bg-card [&_button]:!text-foreground [&_button:hover]:!bg-secondary [&_button_svg]:!fill-foreground"
+          />
+        </ReactFlow>
+      ) : (
+        <TimelineView nodes={nodes} overrides={overrides} onSelect={setSelected} />
+      )}
+
+      {/* View + export toolbar */}
+      <div className="absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-border bg-card/95 p-1 shadow-xl backdrop-blur-md">
+        <button
+          onClick={() => setView("graph")}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition",
+            view === "graph" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <GitBranch className="size-3.5" /> Tree
+        </button>
+        <button
+          onClick={() => setView("timeline")}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition",
+            view === "timeline" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Calendar className="size-3.5" /> Timeline
+        </button>
+        <span className="mx-1 h-5 w-px bg-border" />
+        <button
+          onClick={exportJson}
+          title="Export JSON"
+          className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:text-foreground"
+        >
+          <Download className="size-3.5" /> JSON
+        </button>
+        <button
+          onClick={copyLink}
+          title="Copy share link"
+          className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:text-foreground"
+        >
+          <Link2 className="size-3.5" /> {copied ? "Copied" : "Share"}
+        </button>
+      </div>
 
       {/* Leyenda */}
       <div className="pointer-events-none absolute left-4 top-4 rounded-lg border border-border bg-card/90 px-3 py-2 backdrop-blur-md">
@@ -326,7 +408,10 @@ export function PredictionGraph({
             <Info label="Trend" value={selected.event.trend} />
             <Info label="Duration" value={selected.event.duration || "—"} />
             <Info label="Radiant" value={selected.event.radiant ? "yes" : "no"} />
-            <Info label="Stability" value={selected.stability_index.toFixed(3)} />
+            <Info
+              label="Stability"
+              value={(overrides[selected.id] ?? selected.stability_index).toFixed(3)}
+            />
             {selected.event.probability_ci && selected.event.probability_ci.length === 2 && (
               <Info
                 label="90% CI"
@@ -334,6 +419,21 @@ export function PredictionGraph({
               />
             )}
           </dl>
+
+          <StabilityOverride
+            value={overrides[selected.id]}
+            base={selected.stability_index}
+            overridden={overrides[selected.id] != null}
+            onChange={(v) => applyOverride(selected.id, v)}
+            onReset={() => resetOverride(selected.id)}
+          />
+
+          <Explainability
+            event={selected.event}
+            branch={selected.branch_type}
+            base={selected.stability_index}
+            override={overrides[selected.id]}
+          />
 
           {selected.event.actors && selected.event.actors.length > 0 && (
             <ActorDetails actors={selected.event.actors} />
@@ -509,5 +609,170 @@ function countRadiants(nodes: PredictionNode[]): number {
   return nodes.reduce(
     (acc, n) => acc + (n.event.radiant ? 1 : 0) + countRadiants(n.children),
     0
+  );
+}
+
+function flatten(
+  nodes: PredictionNode[],
+  out: PredictionNode[] = []
+): PredictionNode[] {
+  for (const n of nodes) {
+    out.push(n);
+    flatten(n.children, out);
+  }
+  return out;
+}
+
+function TimelineView({
+  nodes,
+  overrides,
+  onSelect,
+}: {
+  nodes: PredictionNode[];
+  overrides: Record<string, number>;
+  onSelect: (n: PredictionNode) => void;
+}) {
+  const items = useMemo(() => {
+    return flatten(nodes).sort((a, b) => {
+      if (a.event.year !== b.event.year) return a.event.year - b.event.year;
+      if (a.depth !== b.depth) return a.depth - b.depth;
+      return b.event.probability - a.event.probability;
+    });
+  }, [nodes]);
+
+  return (
+    <div className="h-full w-full overflow-y-auto px-6 py-20">
+      <div className="mx-auto max-w-3xl">
+        <div className="relative border-l-2 border-border pl-6">
+          {items.map((n) => {
+            const color = BRANCH_COLORS[n.branch_type] || "#8b5cf6";
+            const stability = overrides[n.id] ?? n.stability_index;
+            return (
+              <button
+                key={n.id}
+                onClick={() => onSelect(n)}
+                className="group relative mb-5 block w-full rounded-xl border border-border bg-card/80 p-3 text-left transition hover:border-primary/50 hover:bg-card"
+              >
+                <span
+                  className="absolute -left-[31px] top-4 size-3 rounded-full ring-4 ring-background"
+                  style={{ background: color }}
+                />
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                    {n.event.date || n.event.year} · D{n.depth} · {n.branch_type}
+                  </span>
+                  <span className="flex items-center gap-2 font-mono text-xs">
+                    {n.event.radiant && <Sparkles className="size-3 text-yellow-300" />}
+                    <span className="text-primary">{(stability * 100).toFixed(0)}%</span>
+                  </span>
+                </div>
+                <p className="mt-1 text-sm font-semibold leading-snug text-foreground">
+                  {n.event.name}
+                </p>
+                <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+                  {n.event.description}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StabilityOverride({
+  value,
+  base,
+  overridden,
+  onChange,
+  onReset,
+}: {
+  value: number | undefined;
+  base: number;
+  overridden: boolean;
+  onChange: (v: number) => void;
+  onReset: () => void;
+}) {
+  const current = value ?? base;
+  return (
+    <div className="mt-3 border-t border-border pt-3">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+          <Activity className="size-3" /> Manual stability override
+        </div>
+        {overridden && (
+          <button
+            onClick={onReset}
+            className="text-[10px] text-muted-foreground transition hover:text-foreground"
+          >
+            reset
+          </button>
+        )}
+      </div>
+      <Slider
+        value={[current]}
+        min={0}
+        max={1}
+        step={0.01}
+        onValueChange={(v) => onChange(v[0])}
+      />
+      <div className="mt-1 flex justify-between font-mono text-[10px] text-muted-foreground">
+        <span>0%</span>
+        <span className={overridden ? "text-primary" : ""}>{(current * 100).toFixed(0)}%</span>
+        <span>100%</span>
+      </div>
+    </div>
+  );
+}
+
+function Explainability({
+  event,
+  branch,
+  base,
+  override,
+}: {
+  event: PsychEvent;
+  branch: string;
+  base: number;
+  override: number | undefined;
+}) {
+  const reasons: string[] = [];
+  reasons.push(`Branch role: ${BRANCH_LABEL[branch] || branch}.`);
+  reasons.push(`Base stability ${(base * 100).toFixed(0)}% from coherence and parent coupling.`);
+  if (override != null) {
+    reasons.push(`Manual override applied: ${(override * 100).toFixed(0)}%.`);
+  }
+  reasons.push(
+    event.radiant
+      ? "Marked radiant: treated as highly inevitable."
+      : "Not radiant: contingent on upstream events."
+  );
+  if (event.citations && event.citations.length > 0) {
+    reasons.push(`${event.citations.length} source(s) attributed to this event.`);
+  } else {
+    reasons.push("No direct source attribution.");
+  }
+  if (event.actors && event.actors.length > 0) {
+    reasons.push(`Involves ${event.actors.length} named actor(s).`);
+  }
+  if (event.temporal) {
+    reasons.push("Temporal hazard model available for this event.");
+  }
+
+  return (
+    <div className="mt-3 border-t border-border pt-3">
+      <div className="mb-2 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+        <BookOpen className="size-3" /> Why this prediction
+      </div>
+      <ul className="space-y-1 text-[11px] text-muted-foreground">
+        {reasons.map((r, i) => (
+          <li key={i} className="flex gap-1.5">
+            <span className="text-primary">·</span>
+            <span>{r}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

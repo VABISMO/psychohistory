@@ -9,7 +9,11 @@ mkdir -p "$LOGDIR"
 echo "=== Psychohistory launcher ==="
 
 # --- Backend ---
-pkill -f "[u]vicorn psychohistory.main" 2>/dev/null || true
+# Force-kill any previous backend. SIGKILL (not SIGTERM) is intentional: a
+# graceful shutdown hangs while an in-flight LLM call is pending, which leaves
+# an orphaned process holding an open connection to Ollama and stalls the next
+# run. SIGKILL closes the socket so Ollama cancels the request.
+pkill -9 -f "[u]vicorn psychohistory.main" 2>/dev/null || true
 sleep 1
 cd "$ROOT/backend"
 setsid nohup venv/bin/uvicorn psychohistory.main:app \
@@ -18,8 +22,8 @@ setsid nohup venv/bin/uvicorn psychohistory.main:app \
 echo "Backend PID: $!  -> http://localhost:8000"
 
 # --- Frontend ---
-pkill -f "[n]ext dev" 2>/dev/null || true
-pkill -f "[n]ext-server" 2>/dev/null || true
+pkill -9 -f "[n]ext dev" 2>/dev/null || true
+pkill -9 -f "[n]ext-server" 2>/dev/null || true
 sleep 1
 cd "$ROOT/frontend"
 setsid nohup npm run dev -- --port 3000 \
