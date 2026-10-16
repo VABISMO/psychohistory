@@ -31,6 +31,12 @@ export interface Citation {
   retrieved_at: string;
 }
 
+export interface UserSource {
+  title: string;
+  url: string;
+  text: string;
+}
+
 export interface PsychEvent {
   name: string;
   description: string;
@@ -75,12 +81,18 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export async function generatePrediction(
   prompt: string,
   depth: number,
-  model?: string
+  model?: string,
+  extraSources?: UserSource[]
 ): Promise<PredictionResult> {
   const res = await fetch(`${API_BASE}/predict`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, prediction_depth: depth, model }),
+    body: JSON.stringify({
+      prompt,
+      prediction_depth: depth,
+      model,
+      extra_sources: extraSources ?? [],
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Unknown error" }));
