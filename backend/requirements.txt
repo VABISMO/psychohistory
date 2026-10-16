@@ -4,3 +4,4 @@ pydantic
 pymongo
 mongomock
 uvicorn
+python-dotenv
