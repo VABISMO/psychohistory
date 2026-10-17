@@ -18,8 +18,19 @@ from . import schema as schema_math
 from . import constraints as constraints_math
 from . import grounding as grounding_math
 
-OLLAMA_HOST = "http://localhost:11434"
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 DEFAULT_MODEL = "llama3"
+
+# How long Ollama keeps a model resident after a request. On a RAM-constrained
+# box (CPU inference, 15 GB) keeping several large models alive at once causes
+# swap thrashing, so a shorter default is used. Configure with PSYCHO_KEEP_ALIVE
+# (e.g. "30s", "5m", "-1" to keep forever).
+OLLAMA_KEEP_ALIVE = os.getenv("PSYCHO_KEEP_ALIVE", "5m")
+
+# When true (default), any *other* model Ollama has resident is unloaded before
+# a prediction runs, so only a single model is ever held in memory at a time.
+# Disable with PSYCHO_SINGLE_MODEL=0.
+SINGLE_MODEL = os.getenv("PSYCHO_SINGLE_MODEL", "1").lower() not in ("0", "false", "no", "off")
 
 # ROADMAP section A: temporal / rare-event enrichment. Additive and flag-gated;
 # set PSYCHO_TEMPORAL=0 to disable and restore the exact previous behaviour.
@@ -72,6 +83,46 @@ def _pick_model(available: List[str]) -> str:
         if "mimo" not in m:
             return m
     return available[0] if available else DEFAULT_MODEL
+
+
+def _loaded_models() -> List[str]:
+    """Names of the models Ollama currently holds in memory (``/api/ps``)."""
+    try:
+        resp = httpx.get(f"{OLLAMA_HOST}/api/ps", timeout=5.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            return [
+                str(m.get("name") or m.get("model") or "")
+                for m in data.get("models", [])
+                if m.get("name") or m.get("model")
+            ]
+    except Exception:
+        pass
+    return []
+
+
+def _unload_other_models(target: str) -> None:
+    """Free RAM by unloading every resident model except ``target``.
+
+    On a RAM-bound machine, switching models (e.g. llama3 -> gemma4) otherwise
+    leaves *both* resident until their keep-alive expires, which thrashes swap.
+    Best-effort: any failure is swallowed. Disabled with PSYCHO_SINGLE_MODEL=0.
+    """
+    if not SINGLE_MODEL:
+        return
+    base = (target or "").split(":")[0]
+    for name in _loaded_models():
+        if name == target or name.split(":")[0] == base:
+            continue
+        try:
+            httpx.post(
+                f"{OLLAMA_HOST}/api/generate",
+                json={"model": name, "prompt": "", "keep_alive": 0},
+                timeout=5.0,
+            )
+            print(f"[PREDICT] Unloaded resident model to free RAM: {name}")
+        except Exception as e:
+            print(f"[PREDICT] Could not unload {name} ({type(e).__name__})")
 
 
 def _phi(x: float) -> float:
@@ -1202,7 +1253,7 @@ async def _llm_flat_tree(
                     "system": system_prompt,
                     "format": output_format,
                     "stream": False,
-                    "keep_alive": "10m",
+                    "keep_alive": OLLAMA_KEEP_ALIVE,
                     "options": {
                         "temperature": 0.7,
                         "num_predict": num_predict,
@@ -1216,6 +1267,9 @@ async def _llm_flat_tree(
             return _repair_and_load(raw)
 
     async with ollama_bottleneck:
+        # Only one model may stay resident: unloading any other before this call
+        # keeps peak RAM to a single model (avoids swap thrash on CPU boxes).
+        _unload_other_models(model)
         parsed = await with_retries(
             _call_ollama,
             attempts=2,
