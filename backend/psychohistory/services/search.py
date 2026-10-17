@@ -1,7 +1,9 @@
 import asyncio
+import os
 import re
+import time
 import xml.etree.ElementTree as ET
-from typing import List
+from typing import List, Optional
 from urllib.parse import quote, quote_plus
 
 import httpx
@@ -11,6 +13,9 @@ from . import web
 
 # How many of the top-ranked source pages to actually download and read.
 READ_PAGES = 5
+
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+QUERY_MODEL = os.getenv("PSYCHO_QUERY_MODEL", "llama3")
 
 # ---------------------------------------------------------------------------
 # URL extraction from the user's prompt
@@ -32,39 +37,89 @@ def _extract_urls(prompt: str) -> List[str]:
     return out
 
 
-# Imperative / generic verbs that dominate Spanish search results when the
-# prompt starts with an instruction ("revisa…", "analiza…", "define…").
-_GENERIC_START = {
-    "revisa", "revisar", "analiza", "analizar", "define", "definir",
-    "explica", "explicar", "describe", "describir", "comenta", "comentar",
-    "evalua", "evaluar", "considera", "considerar", "examina", "examinar",
-    "observa", "observar", "investiga", "investigar", "estudia", "estudiar",
-    "review", "analyze", "analyse", "define", "explain", "describe",
-    "comment", "evaluate", "consider", "examine", "observe", "research",
-    "study", "summarize", "summarise", "outline", "discuss",
-}
+# ---------------------------------------------------------------------------
+# LLM-generated search query
+# ---------------------------------------------------------------------------
+
+_QUERY_SYSTEM = (
+    "You are a web-search query generator. Given a user prompt, output a single "
+    "concise search query (max 10 words) that would retrieve the most relevant "
+    "results on Bing. Strip URLs, imperative verbs (revisa, analiza, define...), "
+    "and filler. Output ONLY the query string, nothing else."
+)
+
+# Short cache: query -> (expires_at, result)
+_QUERY_CACHE: dict = {}
+_QUERY_CACHE_TTL = 300.0
 
 
-def _search_query(prompt: str) -> str:
-    """Build a clean search query from the prompt.
+async def _ollama_generate(prompt: str, system: str = "", num_predict: int = 40,
+                           temperature: float = 0.1) -> Optional[str]:
+    """Lightweight Ollama call. Returns the raw response text or None."""
+    payload = {
+        "model": QUERY_MODEL,
+        "prompt": prompt,
+        "stream": False,
+        "keep_alive": "5m",
+        "options": {
+            "temperature": temperature,
+            "num_predict": num_predict,
+            "num_ctx": 1024,
+            "num_thread": 6,
+        },
+    }
+    if system:
+        payload["system"] = system
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(f"{OLLAMA_HOST}/api/generate", json=payload)
+            resp.raise_for_status()
+            return (resp.json().get("response") or "").strip()
+    except Exception as e:
+        print(f"[SEARCH] Ollama query-gen failed: {type(e).__name__}")
+        return None
 
-    Strips embedded URLs (they are fetched directly, not searched) and leading
-    imperative verbs so Bing doesn't return dictionary pages for "revisa" etc.
-    Falls back to the raw prompt when the cleaned query would be empty.
-    """
+
+def _fallback_query(prompt: str) -> str:
+    """Naive fallback: strip URLs, collapse whitespace. Used when Ollama is down."""
     text = _URL_RE.sub(" ", prompt or "")
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
-        return (prompt or "").strip()
-    words = text.split()
-    # Drop leading generic verbs / filler words (up to 3) so the query starts
-    # with the actual topic.
-    dropped = 0
-    while words and dropped < 3 and words[0].lower().strip(".,;:!?…") in _GENERIC_START:
-        words.pop(0)
-        dropped += 1
-    cleaned = " ".join(words).strip()
-    return cleaned or text
+    return re.sub(r"\s+", " ", text).strip() or (prompt or "").strip()
+
+
+async def generate_search_query(prompt: str) -> str:
+    """Ask the LLM to produce a clean web-search query from the user's prompt.
+
+    This is fully dynamic: no hardcoded verbs, no domain assumptions. The LLM
+    sees the prompt and outputs only what Bing should search for. Falls back to
+    a naive URL-strip if Ollama is unreachable.
+    """
+    cache_key = (prompt or "").strip().lower()
+    now = time.time()
+    cached = _QUERY_CACHE.get(cache_key)
+    if cached and cached[0] > now:
+        return cached[1]
+
+    raw = await _ollama_generate(
+        f"User prompt:\n{prompt}\n\nSearch query:",
+        system=_QUERY_SYSTEM,
+        num_predict=40,
+        temperature=0.1,
+    )
+    # Sanitize: take first line, strip quotes, cap length.
+    query = ""
+    if raw:
+        query = raw.strip().splitlines()[0].strip().strip('"').strip("'")
+        query = re.sub(r"^(search query|query|consulta)\s*[:\-]\s*", "", query, flags=re.IGNORECASE)
+        query = query[:120].strip()
+    if not query or len(query) < 3:
+        query = _fallback_query(prompt)
+    print(f"[SEARCH] LLM query: '{query}' (raw={raw!r})")
+    _QUERY_CACHE[cache_key] = (now + _QUERY_CACHE_TTL, query)
+    return query
+
+
+# Keep a sync alias so existing call-sites that are already async can await it.
+_search_query = generate_search_query
 
 
 CURATED_SOURCES = [
@@ -180,7 +235,7 @@ async def retrieve_context(prompt: str, max_results: int = 10) -> List[str]:
     Retrieve real context from the internet: recent news + encyclopedia + curated
     macro sources. Everything is injected into the LLM to ground the predictions.
     """
-    q = _search_query(prompt)
+    q = await generate_search_query(prompt)
     user_urls = _extract_urls(prompt)
     print(f"[SEARCH] Retrieving context for: '{q}' (user_urls={len(user_urls)})")
 
@@ -246,7 +301,7 @@ async def retrieve_sources(prompt: str, max_results: int = 16) -> List[dict]:
     Same live sources as :func:`retrieve_context` but returned as records so the
     API can surface per-event citations (ROADMAP section E). Deduped by URL.
     """
-    q = _search_query(prompt)
+    q = await generate_search_query(prompt)
     user_urls = _extract_urls(prompt)
 
     # User-provided URLs: open them directly, they are first-class evidence.
@@ -443,7 +498,7 @@ async def retrieve_constraints(prompt: str) -> List[str]:
     records, percentages). Every numeric bound comes from the web — none is
     hardcoded.
     """
-    q = _search_query(prompt)
+    q = await generate_search_query(prompt)
     print(f"[SEARCH] Looking up real maximums/limits for: '{q}'")
 
     tasks = []
