@@ -12,6 +12,61 @@ from . import web
 # How many of the top-ranked source pages to actually download and read.
 READ_PAGES = 5
 
+# ---------------------------------------------------------------------------
+# URL extraction from the user's prompt
+# ---------------------------------------------------------------------------
+
+_URL_RE = re.compile(r"https?://[^\s<>\"')\]]+")
+
+
+def _extract_urls(prompt: str) -> List[str]:
+    """Return every http(s) URL embedded in the user's prompt, deduped."""
+    seen = set()
+    out: List[str] = []
+    for m in _URL_RE.finditer(prompt or ""):
+        url = m.group(0).rstrip(".,;:!?")
+        key = url.rstrip("/").lower()
+        if key not in seen:
+            seen.add(key)
+            out.append(url)
+    return out
+
+
+# Imperative / generic verbs that dominate Spanish search results when the
+# prompt starts with an instruction ("revisa…", "analiza…", "define…").
+_GENERIC_START = {
+    "revisa", "revisar", "analiza", "analizar", "define", "definir",
+    "explica", "explicar", "describe", "describir", "comenta", "comentar",
+    "evalua", "evaluar", "considera", "considerar", "examina", "examinar",
+    "observa", "observar", "investiga", "investigar", "estudia", "estudiar",
+    "review", "analyze", "analyse", "define", "explain", "describe",
+    "comment", "evaluate", "consider", "examine", "observe", "research",
+    "study", "summarize", "summarise", "outline", "discuss",
+}
+
+
+def _search_query(prompt: str) -> str:
+    """Build a clean search query from the prompt.
+
+    Strips embedded URLs (they are fetched directly, not searched) and leading
+    imperative verbs so Bing doesn't return dictionary pages for "revisa" etc.
+    Falls back to the raw prompt when the cleaned query would be empty.
+    """
+    text = _URL_RE.sub(" ", prompt or "")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return (prompt or "").strip()
+    words = text.split()
+    # Drop leading generic verbs / filler words (up to 3) so the query starts
+    # with the actual topic.
+    dropped = 0
+    while words and dropped < 3 and words[0].lower().strip(".,;:!?…") in _GENERIC_START:
+        words.pop(0)
+        dropped += 1
+    cleaned = " ".join(words).strip()
+    return cleaned or text
+
+
 CURATED_SOURCES = [
     "World Bank - World Development Indicators (Gini, GDP, governance)",
     "Freedom House - Freedom in the World Report (freedom indices)",
@@ -125,20 +180,35 @@ async def retrieve_context(prompt: str, max_results: int = 10) -> List[str]:
     Retrieve real context from the internet: recent news + encyclopedia + curated
     macro sources. Everything is injected into the LLM to ground the predictions.
     """
-    print(f"[SEARCH] Retrieving context for: '{prompt}'")
+    q = _search_query(prompt)
+    user_urls = _extract_urls(prompt)
+    print(f"[SEARCH] Retrieving context for: '{q}' (user_urls={len(user_urls)})")
 
-    news_task = _google_news(prompt)
-    wiki_es_task = _wikipedia(prompt, lang="es")
-    wiki_en_task = _wikipedia(prompt, lang="en")
-    news, wiki_es, wiki_en = await asyncio.gather(news_task, wiki_es_task, wiki_en_task)
+    # Fetch user-provided URLs directly — they are the highest-signal source.
+    user_pages_task = web.read_pages(
+        [{"url": u} for u in user_urls], limit=len(user_urls) or 1, max_chars=2000
+    ) if user_urls else asyncio.sleep(0, result=[])
+
+    news_task = _google_news(q)
+    wiki_es_task = _wikipedia(q, lang="es")
+    wiki_en_task = _wikipedia(q, lang="en")
+    user_pages, news, wiki_es, wiki_en = await asyncio.gather(
+        user_pages_task, news_task, wiki_es_task, wiki_en_task
+    )
     wiki = wiki_es + wiki_en
 
     # Rerank + dedup before injecting, and chunk any oversized line.
-    news = dedup_and_rerank(news, prompt, limit=8)
-    wiki = dedup_and_rerank(wiki, prompt, limit=6)
+    news = dedup_and_rerank(news, q, limit=8)
+    wiki = dedup_and_rerank(wiki, q, limit=6)
 
     context: List[str] = []
     context.append(f"USER SCENARIO: {prompt}")
+    if user_pages:
+        context.append(f"--- USER-PROVIDED PAGES ({len(user_pages)}) ---")
+        for p in user_pages:
+            title = p.get("title") or p.get("url", "")
+            text = p.get("text") or ""
+            context.extend(chunk_text(f"PAGE {title}: {text}", max_len=500))
     if news:
         context.append(f"--- RECENT NEWS ({len(news)}) ---")
         for line in news:
@@ -147,13 +217,13 @@ async def retrieve_context(prompt: str, max_results: int = 10) -> List[str]:
         context.append("--- ENCYCLOPEDIC CONTEXT ---")
         for line in wiki:
             context.extend(chunk_text(line))
-    if not news and not wiki:
+    if not news and not wiki and not user_pages:
         context.append("(No live web access; use general knowledge)")
 
     context.append("--- AVAILABLE DATA SOURCES ---")
     context.append("; ".join(CURATED_SOURCES))
 
-    print(f"[SEARCH] Context: {len(news)} news, {len(wiki)} wiki entries")
+    print(f"[SEARCH] Context: {len(user_pages)} user pages, {len(news)} news, {len(wiki)} wiki entries")
     return context[: max_results + 4]
 
 
@@ -176,25 +246,50 @@ async def retrieve_sources(prompt: str, max_results: int = 16) -> List[dict]:
     Same live sources as :func:`retrieve_context` but returned as records so the
     API can surface per-event citations (ROADMAP section E). Deduped by URL.
     """
+    q = _search_query(prompt)
+    user_urls = _extract_urls(prompt)
+
+    # User-provided URLs: open them directly, they are first-class evidence.
+    user_page_items: List[dict] = []
+    if user_urls:
+        pages = await web.read_pages(
+            [{"url": u} for u in user_urls], limit=len(user_urls), max_chars=2000
+        )
+        for p in pages:
+            user_page_items.append({
+                "title": (p.get("title") or p.get("url", ""))[:200],
+                "url": p.get("url", ""),
+                "snippet": (p.get("text") or "")[:600],
+                "source": "USER",
+            })
+
     news_items, wiki_es_items, wiki_en_items, external_items, bing_news_items, bing_web_items = await asyncio.gather(
-        _google_news_items(prompt),
-        _wikipedia_items(prompt, limit=3, lang="es"),
-        _wikipedia_items(prompt, limit=3, lang="en"),
-        datasources.external_sources(prompt),
-        web.bing_news(prompt, limit=6),
-        web.bing_web(prompt, limit=6),
+        _google_news_items(q),
+        _wikipedia_items(q, limit=3, lang="es"),
+        _wikipedia_items(q, limit=3, lang="en"),
+        datasources.external_sources(q),
+        web.bing_news(q, limit=6),
+        web.bing_web(q, limit=6),
     )
+    # User pages lead, then Bing/web, then news, wiki and external data.
     items = _dedupe_sources(
-        bing_news_items + bing_web_items + news_items
+        user_page_items
+        + bing_news_items + bing_web_items + news_items
         + wiki_es_items + wiki_en_items + external_items
     )
     # Rank by keyword overlap with the scenario, then actually open the top
     # pages and replace their snippets with the readable article text.
-    qwords = set(_keywords(prompt))
+    qwords = set(_keywords(q))
     items.sort(
         key=lambda it: len(qwords & set(_keywords(it.get("title", "") + " " + it.get("snippet", "")))),
         reverse=True,
     )
+    # User-provided URLs always stay at the front regardless of keyword score.
+    user_urls_norm = {u.rstrip("/").lower() for u in user_urls}
+    user_items = [it for it in items if (it.get("url") or "").rstrip("/").lower() in user_urls_norm]
+    other_items = [it for it in items if (it.get("url") or "").rstrip("/").lower() not in user_urls_norm]
+    items = user_items + other_items
+
     pages = await web.read_pages(items, limit=READ_PAGES)
     read_by_url = {(p["url"] or "").rstrip("/").lower(): p for p in pages}
     for it in items:
@@ -205,7 +300,7 @@ async def retrieve_sources(prompt: str, max_results: int = 16) -> List[dict]:
             it["title"] = page["title"][:200]
         if page.get("text"):
             it["snippet"] = page["text"][:600]
-    print(f"[SEARCH] Retrieved {len(items)} structured sources ({len(pages)} pages read)")
+    print(f"[SEARCH] Retrieved {len(items)} structured sources ({len(pages)} pages read, {len(user_page_items)} user)")
     return items[:max_results]
 
 
@@ -348,24 +443,25 @@ async def retrieve_constraints(prompt: str) -> List[str]:
     records, percentages). Every numeric bound comes from the web — none is
     hardcoded.
     """
-    print(f"[SEARCH] Looking up real maximums/limits for: '{prompt}'")
+    q = _search_query(prompt)
+    print(f"[SEARCH] Looking up real maximums/limits for: '{q}'")
 
     tasks = []
     # Direct lookups of the scenario itself (best chance of hitting the
     # institutional article that states the total/capacity).
-    tasks.append(_wikipedia(prompt, limit=2, lang="es"))
-    tasks.append(_wikipedia(prompt, limit=2, lang="en"))
+    tasks.append(_wikipedia(q, limit=2, lang="es"))
+    tasks.append(_wikipedia(q, limit=2, lang="en"))
     # De-temporalized lookups: a future scenario matches the standing article
     # that states the real total/capacity (e.g. the chamber's seat count).
-    bare = _detemporalize(prompt)
+    bare = _detemporalize(q)
     if bare:
         tasks.append(_wikipedia(bare, limit=2, lang="es"))
         tasks.append(_wikipedia(bare, limit=2, lang="en"))
     # Bound-seeking queries derived from the user's own scenario.
-    for q in _constraint_queries(prompt, k=2):
-        tasks.append(_wikipedia(q, limit=1, lang="es"))
-        tasks.append(_wikipedia(q, limit=1, lang="en"))
-        tasks.append(_google_news(q, limit=3))
+    for cq in _constraint_queries(q, k=2):
+        tasks.append(_wikipedia(cq, limit=1, lang="es"))
+        tasks.append(_wikipedia(cq, limit=1, lang="en"))
+        tasks.append(_google_news(cq, limit=3))
 
     results = await asyncio.gather(*tasks)
 
